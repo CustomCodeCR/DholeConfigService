@@ -10,7 +10,7 @@ public sealed class AuditEndpointMiddleware(
     ILogger<AuditEndpointMiddleware> logger
 )
 {
-    private const string SourceService = "DholeAuthService";
+    private const string SourceService = "DholeConfigService";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
