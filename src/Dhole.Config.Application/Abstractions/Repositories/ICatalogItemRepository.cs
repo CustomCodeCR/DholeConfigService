@@ -57,6 +57,28 @@ public interface ICatalogItemRepository : IRepository<CatalogItem, Guid>
         CancellationToken cancellationToken = default
     );
 
+    Task<CatalogItemLookupDto?> GetLookupByIdAsync(
+        Guid catalogItemId,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<CatalogItemLookupDto?> GetLookupByCodeAsync(
+        string catalogGroupSlug,
+        string catalogItemCode,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<CatalogItemLookupDto?> ResolveLookupAsync(
+        string catalogGroupSlug,
+        string value,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<IReadOnlyCollection<CatalogItemLookupDto>> GetActiveLookupsByGroupSlugAsync(
+        string catalogGroupSlug,
+        CancellationToken cancellationToken = default
+    );
+
     Task<bool> IsValidActiveItemAsync(
         string catalogGroupSlug,
         string catalogItemSlug,

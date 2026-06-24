@@ -253,6 +253,159 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public Task<CatalogItemLookupDto?> GetLookupByIdAsync(
+        Guid catalogItemId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return dbContext
+            .CatalogItems.AsNoTracking()
+            .Where(x => x.Id == catalogItemId && !x.IsDeleted && !x.CatalogGroup.IsDeleted)
+            .Select(x => new CatalogItemLookupDto(
+                x.Id,
+                x.CatalogGroupId,
+                x.CatalogGroup.Code,
+                x.CatalogGroup.Slug,
+                x.Code,
+                x.Slug,
+                x.Name,
+                x.Value,
+                x.MetadataJson,
+                x.IsActive && x.CatalogGroup.IsActive
+            ))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public Task<CatalogItemLookupDto?> GetLookupByCodeAsync(
+        string catalogGroupSlug,
+        string catalogItemCode,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var groupSlug = catalogGroupSlug.Trim().ToLowerInvariant();
+        var itemCode = catalogItemCode.Trim().ToLowerInvariant();
+
+        return dbContext
+            .CatalogItems.AsNoTracking()
+            .Where(x =>
+                x.CatalogGroup.Slug == groupSlug
+                && x.Code.ToLower() == itemCode
+                && !x.IsDeleted
+                && !x.CatalogGroup.IsDeleted
+            )
+            .Select(x => new CatalogItemLookupDto(
+                x.Id,
+                x.CatalogGroupId,
+                x.CatalogGroup.Code,
+                x.CatalogGroup.Slug,
+                x.Code,
+                x.Slug,
+                x.Name,
+                x.Value,
+                x.MetadataJson,
+                x.IsActive && x.CatalogGroup.IsActive
+            ))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public Task<CatalogItemLookupDto?> ResolveLookupAsync(
+        string catalogGroupSlug,
+        string value,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var groupSlug = catalogGroupSlug.Trim().ToLowerInvariant();
+        var normalizedValue = value.Trim().ToLowerInvariant();
+
+        if (Guid.TryParse(value, out var catalogItemId))
+        {
+            return dbContext
+                .CatalogItems.AsNoTracking()
+                .Where(x =>
+                    x.Id == catalogItemId
+                    && x.CatalogGroup.Slug == groupSlug
+                    && !x.IsDeleted
+                    && !x.CatalogGroup.IsDeleted
+                )
+                .Select(x => new CatalogItemLookupDto(
+                    x.Id,
+                    x.CatalogGroupId,
+                    x.CatalogGroup.Code,
+                    x.CatalogGroup.Slug,
+                    x.Code,
+                    x.Slug,
+                    x.Name,
+                    x.Value,
+                    x.MetadataJson,
+                    x.IsActive && x.CatalogGroup.IsActive
+                ))
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        return dbContext
+            .CatalogItems.AsNoTracking()
+            .Where(x =>
+                x.CatalogGroup.Slug == groupSlug
+                && !x.IsDeleted
+                && !x.CatalogGroup.IsDeleted
+                && (
+                    x.Slug == normalizedValue
+                    || x.Code.ToLower() == normalizedValue
+                    || x.Name.ToLower() == normalizedValue
+                    || (x.Value != null && x.Value.ToLower() == normalizedValue)
+                )
+            )
+            .OrderByDescending(x => x.IsActive && x.CatalogGroup.IsActive)
+            .ThenBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .Select(x => new CatalogItemLookupDto(
+                x.Id,
+                x.CatalogGroupId,
+                x.CatalogGroup.Code,
+                x.CatalogGroup.Slug,
+                x.Code,
+                x.Slug,
+                x.Name,
+                x.Value,
+                x.MetadataJson,
+                x.IsActive && x.CatalogGroup.IsActive
+            ))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<CatalogItemLookupDto>> GetActiveLookupsByGroupSlugAsync(
+        string catalogGroupSlug,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var groupSlug = catalogGroupSlug.Trim().ToLowerInvariant();
+
+        return await dbContext
+            .CatalogItems.AsNoTracking()
+            .Where(x =>
+                x.CatalogGroup.Slug == groupSlug
+                && x.IsActive
+                && x.CatalogGroup.IsActive
+                && !x.IsDeleted
+                && !x.CatalogGroup.IsDeleted
+            )
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .Select(x => new CatalogItemLookupDto(
+                x.Id,
+                x.CatalogGroupId,
+                x.CatalogGroup.Code,
+                x.CatalogGroup.Slug,
+                x.Code,
+                x.Slug,
+                x.Name,
+                x.Value,
+                x.MetadataJson,
+                true
+            ))
+            .ToListAsync(cancellationToken);
+    }
+
     public Task<bool> IsValidActiveItemAsync(
         string catalogGroupSlug,
         string catalogItemSlug,
