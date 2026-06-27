@@ -19,6 +19,13 @@ public interface ICatalogItemRepository : IRepository<CatalogItem, Guid>
         CancellationToken cancellationToken = default
     );
 
+    Task<bool> ExistsByNameAsync(
+        Guid catalogGroupId,
+        string name,
+        Guid? excludeId = null,
+        CancellationToken cancellationToken = default
+    );
+
     Task<CatalogItem?> GetByCodeAsync(
         Guid catalogGroupId,
         string code,

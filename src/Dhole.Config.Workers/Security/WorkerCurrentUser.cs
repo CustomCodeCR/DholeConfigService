@@ -10,7 +10,7 @@ internal sealed class WorkerCurrentUser : ICurrentUser
 
     public string? Email => null;
 
-    public string? UserName => "Dhole.Auth.Worker";
+    public string? UserName => "Dhole.Config.Worker";
 
     public string? UserType => "Worker";
 

@@ -61,6 +61,11 @@ public sealed class CreateCatalogItemCommandHandler(
             return Result.Failure<Guid>(ConfigErrors.CatalogItemSlugAlreadyExists);
         }
 
+        if (await catalogItems.ExistsByNameAsync(catalogGroup.Id, command.Name, cancellationToken: cancellationToken))
+        {
+            return Result.Failure<Guid>(ConfigErrors.CatalogItemNameAlreadyExists);
+        }
+
         var catalogItem = CatalogItem.Create(
             catalogGroup.Id,
             code,

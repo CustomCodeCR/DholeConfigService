@@ -39,6 +39,18 @@ public sealed class UpdateCatalogItemCommandHandler(
             return Result.Failure(ConfigErrors.CatalogGroupNotFound);
         }
 
+        if (
+            await catalogItems.ExistsByNameAsync(
+                catalogGroup.Id,
+                command.Name,
+                catalogItem.Id,
+                cancellationToken
+            )
+        )
+        {
+            return Result.Failure(ConfigErrors.CatalogItemNameAlreadyExists);
+        }
+
         var before = CatalogItemAuditSnapshot.From(catalogItem);
 
         catalogItem.Update(

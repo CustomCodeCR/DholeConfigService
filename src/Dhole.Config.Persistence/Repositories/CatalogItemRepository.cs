@@ -20,8 +20,10 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
     {
         var value = code.Trim();
 
+        // El índice único de la base de datos no filtra soft-deleted.
+        // Por eso esta validación también debe considerar registros eliminados.
         return dbContext.CatalogItems.AnyAsync(
-            x => x.CatalogGroupId == catalogGroupId && x.Code == value && !x.IsDeleted,
+            x => x.CatalogGroupId == catalogGroupId && x.Code == value,
             cancellationToken
         );
     }
@@ -34,8 +36,31 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
     {
         var value = slug.Trim().ToLowerInvariant();
 
+        // El índice único de la base de datos no filtra soft-deleted.
+        // Por eso esta validación también debe considerar registros eliminados.
         return dbContext.CatalogItems.AnyAsync(
-            x => x.CatalogGroupId == catalogGroupId && x.Slug == value && !x.IsDeleted,
+            x => x.CatalogGroupId == catalogGroupId && x.Slug == value,
+            cancellationToken
+        );
+    }
+
+
+    public Task<bool> ExistsByNameAsync(
+        Guid catalogGroupId,
+        string name,
+        Guid? excludeId = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var value = name.Trim();
+
+        // El índice único de la base de datos no filtra soft-deleted.
+        // Por eso esta validación también debe considerar registros eliminados.
+        return dbContext.CatalogItems.AnyAsync(
+            x =>
+                x.CatalogGroupId == catalogGroupId
+                && x.Name == value
+                && (!excludeId.HasValue || x.Id != excludeId.Value),
             cancellationToken
         );
     }

@@ -11,6 +11,12 @@ public interface ICatalogGroupRepository : IRepository<CatalogGroup, Guid>
 
     Task<bool> ExistsBySlugAsync(string slug, CancellationToken cancellationToken = default);
 
+    Task<bool> ExistsByNameAsync(
+        string name,
+        Guid? excludeId = null,
+        CancellationToken cancellationToken = default
+    );
+
     Task<CatalogGroup?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
 
     Task<CatalogGroup?> GetBySlugAsync(string slug, CancellationToken cancellationToken = default);

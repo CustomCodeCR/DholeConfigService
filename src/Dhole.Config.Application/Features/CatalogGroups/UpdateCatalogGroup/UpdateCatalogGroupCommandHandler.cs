@@ -28,6 +28,11 @@ public sealed class UpdateCatalogGroupCommandHandler(
             return Result.Failure(ConfigErrors.CatalogGroupNotFound);
         }
 
+        if (await catalogGroups.ExistsByNameAsync(command.Name, catalogGroup.Id, cancellationToken))
+        {
+            return Result.Failure(ConfigErrors.CatalogGroupNameAlreadyExists);
+        }
+
         var before = CatalogGroupAuditSnapshot.From(catalogGroup);
 
         catalogGroup.Update(

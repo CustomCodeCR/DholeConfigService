@@ -44,6 +44,11 @@ public sealed class CreateCatalogGroupCommandHandler(
             return Result.Failure<Guid>(ConfigErrors.CatalogGroupSlugAlreadyExists);
         }
 
+        if (await catalogGroups.ExistsByNameAsync(command.Name, cancellationToken: cancellationToken))
+        {
+            return Result.Failure<Guid>(ConfigErrors.CatalogGroupNameAlreadyExists);
+        }
+
         var catalogGroup = CatalogGroup.Create(
             code,
             slug,

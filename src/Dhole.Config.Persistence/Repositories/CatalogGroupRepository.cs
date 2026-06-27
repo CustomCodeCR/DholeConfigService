@@ -16,18 +16,32 @@ public sealed class CatalogGroupRepository(ServiceDbContext dbContext)
     {
         var value = code.Trim();
 
-        return dbContext.CatalogGroups.AnyAsync(
-            x => x.Code == value && !x.IsDeleted,
-            cancellationToken
-        );
+        // El índice único de la base de datos no filtra soft-deleted.
+        // Por eso esta validación también debe considerar registros eliminados.
+        return dbContext.CatalogGroups.AnyAsync(x => x.Code == value, cancellationToken);
     }
 
     public Task<bool> ExistsBySlugAsync(string slug, CancellationToken cancellationToken = default)
     {
         var value = slug.Trim().ToLowerInvariant();
 
+        // El índice único de la base de datos no filtra soft-deleted.
+        // Por eso esta validación también debe considerar registros eliminados.
+        return dbContext.CatalogGroups.AnyAsync(x => x.Slug == value, cancellationToken);
+    }
+
+    public Task<bool> ExistsByNameAsync(
+        string name,
+        Guid? excludeId = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var value = name.Trim();
+
+        // El índice único de la base de datos no filtra soft-deleted.
+        // Por eso esta validación también debe considerar registros eliminados.
         return dbContext.CatalogGroups.AnyAsync(
-            x => x.Slug == value && !x.IsDeleted,
+            x => x.Name == value && (!excludeId.HasValue || x.Id != excludeId.Value),
             cancellationToken
         );
     }
