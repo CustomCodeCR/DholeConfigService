@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using CustomCodeFramework.Core.Pagination;
 using CustomCodeFramework.Postgres.EntityFramework.Repositories;
 using Dhole.Config.Application.Abstractions.Repositories;
@@ -333,7 +336,7 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public Task<CatalogItemLookupDto?> ResolveLookupAsync(
+    public async Task<CatalogItemLookupDto?> ResolveLookupAsync(
         string catalogGroupSlug,
         string value,
         CancellationToken cancellationToken = default
@@ -344,7 +347,7 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
 
         if (Guid.TryParse(value, out var catalogItemId))
         {
-            return dbContext
+            return await dbContext
                 .CatalogItems.AsNoTracking()
                 .Where(x =>
                     x.Id == catalogItemId
@@ -367,7 +370,7 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
-        return dbContext
+        var exact = await dbContext
             .CatalogItems.AsNoTracking()
             .Where(x =>
                 x.CatalogGroup.Slug == groupSlug
@@ -396,6 +399,31 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
                 x.IsActive && x.CatalogGroup.IsActive
             ))
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        // Segunda etapa: comparación canónica contra los elementos activos de Config.
+        // Permite diferencias de acentos, espacios, guiones y aliases del MetadataJson,
+        // pero nunca aplica coincidencia difusa que pueda devolver un ID incorrecto.
+        var activeItems = await GetActiveLookupsByGroupSlugAsync(groupSlug, cancellationToken);
+        var lookupKey = NormalizeLookupKey(value);
+        if (string.IsNullOrWhiteSpace(lookupKey))
+        {
+            return null;
+        }
+
+        var matches = activeItems
+            .Where(item => GetLookupValues(item)
+                .Select(NormalizeLookupKey)
+                .Any(candidate => candidate == lookupKey))
+            .DistinctBy(item => item.Id)
+            .Take(2)
+            .ToArray();
+
+        return matches.Length == 1 ? matches[0] : null;
     }
 
     public async Task<IReadOnlyCollection<CatalogItemLookupDto>> GetActiveLookupsByGroupSlugAsync(
@@ -451,4 +479,104 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             cancellationToken
         );
     }
+    private static IEnumerable<string> GetLookupValues(CatalogItemLookupDto item)
+    {
+        yield return item.Code;
+        yield return item.Slug;
+        yield return item.Name;
+
+        if (!string.IsNullOrWhiteSpace(item.Value))
+        {
+            yield return item.Value;
+        }
+
+        foreach (var alias in ReadAliases(item.MetadataJson))
+        {
+            yield return alias;
+        }
+    }
+
+    private static IReadOnlyCollection<string> ReadAliases(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return [];
+            }
+
+            var aliases = new List<string>();
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!property.Name.Equals("aliases", StringComparison.OrdinalIgnoreCase)
+                    && !property.Name.Equals("alias", StringComparison.OrdinalIgnoreCase)
+                    && !property.Name.Equals("synonyms", StringComparison.OrdinalIgnoreCase)
+                    && !property.Name.Equals("alternativeNames", StringComparison.OrdinalIgnoreCase)
+                    && !property.Name.Equals("abbreviations", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (property.Value.ValueKind == JsonValueKind.Array)
+                {
+                    aliases.AddRange(
+                        property.Value
+                            .EnumerateArray()
+                            .Where(element => element.ValueKind == JsonValueKind.String)
+                            .Select(element => element.GetString())
+                            .Where(alias => !string.IsNullOrWhiteSpace(alias))
+                            .Select(alias => alias!)
+                    );
+                }
+                else if (property.Value.ValueKind == JsonValueKind.String)
+                {
+                    aliases.AddRange(
+                        (property.Value.GetString() ?? string.Empty).Split(
+                            [',', ';', '|'],
+                            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                        )
+                    );
+                }
+            }
+
+            return aliases.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string NormalizeLookupKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var decomposed = value.Trim().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(decomposed.Length);
+
+        foreach (var character in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(char.ToUpperInvariant(character));
+            }
+        }
+
+        return builder.ToString();
+    }
+
 }
