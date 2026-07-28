@@ -406,8 +406,8 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
         }
 
         // Segunda etapa: comparación canónica contra los elementos activos de Config.
-        // Permite diferencias de acentos, espacios, guiones y aliases del MetadataJson,
-        // pero nunca aplica coincidencia difusa que pueda devolver un ID incorrecto.
+        // Tolera acentos, separadores, aliases, nombres compuestos y errores menores,
+        // manteniendo un margen mínimo para no resolver coincidencias ambiguas.
         var activeItems = await GetActiveLookupsByGroupSlugAsync(groupSlug, cancellationToken);
         var lookupKey = NormalizeLookupKey(value);
         if (string.IsNullOrWhiteSpace(lookupKey))
@@ -415,15 +415,102 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             return null;
         }
 
+        // Nunca se resuelve un agente por similitud, tokens o contenido parcial.
+        // Solo se admite código, slug, nombre, value o alias completo y único.
+        if (groupSlug.Equals("agents", StringComparison.OrdinalIgnoreCase))
+        {
+            var strictMatches = activeItems
+                .Where(item =>
+                    GetLookupValues(item).Any(candidate =>
+                        NormalizeLookupKey(candidate).Equals(
+                            lookupKey,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                )
+                .DistinctBy(item => item.Id)
+                .Take(2)
+                .ToArray();
+
+            return strictMatches.Length == 1 ? strictMatches[0] : null;
+        }
+
+        var lookupKeys = BuildLookupKeys(value, groupSlug);
         var matches = activeItems
             .Where(item => GetLookupValues(item)
-                .Select(NormalizeLookupKey)
-                .Any(candidate => candidate == lookupKey))
+                .SelectMany(candidate => BuildLookupKeys(candidate, groupSlug))
+                .Any(lookupKeys.Contains))
             .DistinctBy(item => item.Id)
             .Take(2)
             .ToArray();
 
-        return matches.Length == 1 ? matches[0] : null;
+        if (matches.Length == 1)
+        {
+            return matches[0];
+        }
+
+        if (matches.Length > 1 || !IsSafeContainmentKey(lookupKey))
+        {
+            return null;
+        }
+
+        // Coincidencia direccional: el valor almacenado en Config contiene el valor
+        // recibido. Permite resolver, por ejemplo, "MOIN" contra "Puerto de Moín"
+        // y "COLON" o "MANZANILLO" contra "Colón/Manzanillo".
+        var containsMatches = activeItems
+            .Select(item => new
+            {
+                Item = item,
+                Distance = GetLookupValues(item)
+                    .SelectMany(candidate => BuildLookupKeys(candidate, groupSlug))
+                    .Where(IsSafeContainmentKey)
+                    .SelectMany(candidate => lookupKeys
+                        .Where(IsSafeContainmentKey)
+                        .Where(input =>
+                            candidate.Contains(input, StringComparison.OrdinalIgnoreCase)
+                            || input.Contains(candidate, StringComparison.OrdinalIgnoreCase)
+                        )
+                        .Select(input => (int?)Math.Abs(candidate.Length - input.Length)))
+                    .OrderBy(distance => distance)
+                    .FirstOrDefault(),
+            })
+            .Where(result => result.Distance.HasValue)
+            .OrderBy(result => result.Distance!.Value)
+            .ThenBy(result => result.Item.Name)
+            .ToArray();
+
+        if (containsMatches.Length == 1)
+        {
+            return containsMatches[0].Item;
+        }
+
+        if (
+            containsMatches.Length > 1
+            && containsMatches[0].Distance!.Value < containsMatches[1].Distance!.Value
+        )
+        {
+            return containsMatches[0].Item;
+        }
+
+        var scored = activeItems
+            .Select(item => new
+            {
+                Item = item,
+                Score = CalculateLookupScore(value, groupSlug, item),
+            })
+            .Where(result => result.Score >= MinimumLookupScore(groupSlug))
+            .OrderByDescending(result => result.Score)
+            .ThenBy(result => result.Item.Name)
+            .ToArray();
+
+        if (scored.Length == 0)
+        {
+            return null;
+        }
+
+        return scored.Length == 1 || scored[0].Score - scored[1].Score >= 0.06m
+            ? scored[0].Item
+            : null;
     }
 
     public async Task<IReadOnlyCollection<CatalogItemLookupDto>> GetActiveLookupsByGroupSlugAsync(
@@ -514,11 +601,7 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             var aliases = new List<string>();
             foreach (var property in document.RootElement.EnumerateObject())
             {
-                if (!property.Name.Equals("aliases", StringComparison.OrdinalIgnoreCase)
-                    && !property.Name.Equals("alias", StringComparison.OrdinalIgnoreCase)
-                    && !property.Name.Equals("synonyms", StringComparison.OrdinalIgnoreCase)
-                    && !property.Name.Equals("alternativeNames", StringComparison.OrdinalIgnoreCase)
-                    && !property.Name.Equals("abbreviations", StringComparison.OrdinalIgnoreCase))
+                if (!IsAliasProperty(property.Name))
                 {
                     continue;
                 }
@@ -551,6 +634,199 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
         {
             return [];
         }
+    }
+
+    private static bool IsAliasProperty(string name)
+    {
+        return name.Equals("aliases", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("alias", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("synonyms", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("alternativeNames", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("abbreviations", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("keywords", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("searchTerms", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("codes", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("unlocodes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static HashSet<string> BuildLookupKeys(string value, string groupSlug)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var normalized = NormalizeLookupKey(value);
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            keys.Add(normalized);
+        }
+
+        foreach (var token in TokenizeLookupValue(value, groupSlug))
+        {
+            keys.Add(token);
+        }
+
+        return keys;
+    }
+
+    private static HashSet<string> TokenizeLookupValue(string value, string groupSlug)
+    {
+        var decomposed = value.Trim().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(decomposed.Length);
+
+        foreach (var character in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            builder.Append(char.IsLetterOrDigit(character)
+                ? char.ToUpperInvariant(character)
+                : ' ');
+        }
+
+        var tokens = builder
+            .ToString()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(token => token.Length >= 3)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (IsPortCatalog(groupSlug))
+        {
+            tokens.ExceptWith(
+                [
+                    "PORT",
+                    "PUERTO",
+                    "PTO",
+                    "TERMINAL",
+                    "PORTOF",
+                    "DEL",
+                    "THE",
+                    "MARITIME",
+                    "MARITIMO",
+                    "MARITIMA",
+                ]
+            );
+        }
+        else if (groupSlug.Equals("carriers", StringComparison.OrdinalIgnoreCase))
+        {
+            tokens.ExceptWith(
+                [
+                    "LINE",
+                    "LINES",
+                    "SHIPPING",
+                    "COMPANY",
+                    "LIMITED",
+                    "CORPORATION",
+                    "GROUP",
+                ]
+            );
+        }
+
+        return tokens;
+    }
+
+    private static decimal CalculateLookupScore(
+        string value,
+        string groupSlug,
+        CatalogItemLookupDto item
+    )
+    {
+        var inputKeys = BuildLookupKeys(value, groupSlug);
+        var candidateKeys = GetLookupValues(item)
+            .SelectMany(candidate => BuildLookupKeys(candidate, groupSlug))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var best = 0m;
+
+        foreach (var input in inputKeys.Where(key => key.Length >= 3))
+        {
+            foreach (var candidate in candidateKeys.Where(key => key.Length >= 3))
+            {
+                if (input.Equals(candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    return 1m;
+                }
+
+                var shortest = Math.Min(input.Length, candidate.Length);
+                var longest = Math.Max(input.Length, candidate.Length);
+                if (shortest >= 4
+                    && (
+                        input.Contains(candidate, StringComparison.OrdinalIgnoreCase)
+                        || candidate.Contains(input, StringComparison.OrdinalIgnoreCase)
+                    ))
+                {
+                    best = Math.Max(best, 0.86m + (0.12m * decimal.Divide(shortest, longest)));
+                }
+
+                if (shortest >= 4)
+                {
+                    best = Math.Max(best, CalculateSimilarity(input, candidate) * 0.98m);
+                }
+            }
+        }
+
+        return Math.Min(best, 1m);
+    }
+
+    private static decimal MinimumLookupScore(string groupSlug)
+    {
+        return groupSlug.ToLowerInvariant() switch
+        {
+            "currencies" => 0.94m,
+            "container-types" => 0.88m,
+            "agents" => 0.84m,
+            "carriers" => 0.82m,
+            "pol" or "poe" or "pod" => 0.78m,
+            _ => 0.86m,
+        };
+    }
+
+    private static bool IsPortCatalog(string groupSlug)
+    {
+        return groupSlug.Equals("pol", StringComparison.OrdinalIgnoreCase)
+            || groupSlug.Equals("poe", StringComparison.OrdinalIgnoreCase)
+            || groupSlug.Equals("pod", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static decimal CalculateSimilarity(string left, string right)
+    {
+        var distance = LevenshteinDistance(left, right);
+        var maxLength = Math.Max(left.Length, right.Length);
+        return maxLength == 0 ? 1m : 1m - decimal.Divide(distance, maxLength);
+    }
+
+    private static int LevenshteinDistance(string left, string right)
+    {
+        var previous = new int[right.Length + 1];
+        var current = new int[right.Length + 1];
+
+        for (var index = 0; index <= right.Length; index++)
+        {
+            previous[index] = index;
+        }
+
+        for (var leftIndex = 1; leftIndex <= left.Length; leftIndex++)
+        {
+            current[0] = leftIndex;
+
+            for (var rightIndex = 1; rightIndex <= right.Length; rightIndex++)
+            {
+                var substitutionCost = left[leftIndex - 1] == right[rightIndex - 1] ? 0 : 1;
+                current[rightIndex] = Math.Min(
+                    Math.Min(current[rightIndex - 1] + 1, previous[rightIndex] + 1),
+                    previous[rightIndex - 1] + substitutionCost
+                );
+            }
+
+            (previous, current) = (current, previous);
+        }
+
+        return previous[right.Length];
+    }
+
+    private static bool IsSafeContainmentKey(string key)
+    {
+        return key.Length >= 4
+            && key.Any(char.IsLetter)
+            && !Guid.TryParseExact(key, "N", out _);
     }
 
     private static string NormalizeLookupKey(string? value)
