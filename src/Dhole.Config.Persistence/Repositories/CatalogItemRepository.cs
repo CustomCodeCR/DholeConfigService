@@ -415,41 +415,60 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             return null;
         }
 
-        // Nunca se resuelve un agente por similitud, tokens o contenido parcial.
-        // Solo se admite código, slug, nombre, value o alias completo y único.
-        if (groupSlug.Equals("agents", StringComparison.OrdinalIgnoreCase))
-        {
-            var strictMatches = activeItems
-                .Where(item =>
-                    GetLookupValues(item).Any(candidate =>
-                        NormalizeLookupKey(candidate).Equals(
-                            lookupKey,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                    )
-                )
-                .DistinctBy(item => item.Id)
-                .Take(2)
-                .ToArray();
-
-            return strictMatches.Length == 1 ? strictMatches[0] : null;
-        }
-
-        var lookupKeys = BuildLookupKeys(value, groupSlug);
-        var matches = activeItems
+        var strictMatches = activeItems
             .Where(item => GetLookupValues(item)
-                .SelectMany(candidate => BuildLookupKeys(candidate, groupSlug))
-                .Any(lookupKeys.Contains))
+                .Select(NormalizeLookupKey)
+                .Any(candidate => candidate.Equals(lookupKey, StringComparison.OrdinalIgnoreCase)))
             .DistinctBy(item => item.Id)
             .Take(2)
             .ToArray();
 
-        if (matches.Length == 1)
+        if (strictMatches.Length == 1)
         {
-            return matches[0];
+            return strictMatches[0];
         }
 
-        if (matches.Length > 1 || !IsSafeContainmentKey(lookupKey))
+        if (strictMatches.Length > 1)
+        {
+            return null;
+        }
+
+        if (groupSlug.Equals("agents", StringComparison.OrdinalIgnoreCase))
+        {
+            var companyKey = NormalizeCompanyKey(value);
+            var companyMatches = activeItems
+                .Where(item => GetLookupValues(item)
+                    .Select(NormalizeCompanyKey)
+                    .Any(candidate =>
+                        !string.IsNullOrWhiteSpace(companyKey)
+                        && candidate.Equals(companyKey, StringComparison.OrdinalIgnoreCase)
+                    ))
+                .DistinctBy(item => item.Id)
+                .Take(2)
+                .ToArray();
+
+            return companyMatches.Length == 1 ? companyMatches[0] : null;
+        }
+
+        if (IsPortCatalog(groupSlug))
+        {
+            var primaryPortKey = BuildPrimaryPortKey(value);
+            var primaryMatches = activeItems
+                .Where(item => GetLookupValues(item)
+                    .Select(BuildPrimaryPortKey)
+                    .Any(candidate => WildcardEquivalent(primaryPortKey, candidate)))
+                .DistinctBy(item => item.Id)
+                .Take(2)
+                .ToArray();
+
+            if (primaryMatches.Length == 1)
+            {
+                return primaryMatches[0];
+            }
+        }
+
+        var lookupKeys = BuildFullLookupKeys(value);
+        if (!lookupKeys.Any(IsSafeContainmentKey))
         {
             return null;
         }
@@ -462,7 +481,7 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             {
                 Item = item,
                 Distance = GetLookupValues(item)
-                    .SelectMany(candidate => BuildLookupKeys(candidate, groupSlug))
+                    .SelectMany(BuildFullLookupKeys)
                     .Where(IsSafeContainmentKey)
                     .SelectMany(candidate => lookupKeys
                         .Where(IsSafeContainmentKey)
@@ -649,6 +668,14 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             || name.Equals("unlocodes", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static HashSet<string> BuildFullLookupKeys(string value)
+    {
+        var normalized = NormalizeLookupKey(value);
+        return string.IsNullOrWhiteSpace(normalized)
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>([normalized], StringComparer.OrdinalIgnoreCase);
+    }
+
     private static HashSet<string> BuildLookupKeys(string value, string groupSlug)
     {
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -668,7 +695,7 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
 
     private static HashSet<string> TokenizeLookupValue(string value, string groupSlug)
     {
-        var decomposed = value.Trim().Normalize(NormalizationForm.FormD);
+        var decomposed = RepairMojibake(value).Trim().Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder(decomposed.Length);
 
         foreach (var character in decomposed)
@@ -722,6 +749,114 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
         }
 
         return tokens;
+    }
+
+    private static string NormalizeCompanyKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var legalSuffixes = new HashSet<string>(
+            [
+                "SA", "SAS", "SRL", "LTDA", "LIMITADA", "LLC", "LTD", "LIMITED",
+                "INC", "CORP", "CORPORATION", "CO", "COMPANY", "SOCIEDAD",
+                "ANONIMA", "ANONIMO", "GROUP", "GRUPO"
+            ],
+            StringComparer.OrdinalIgnoreCase
+        );
+        var tokens = TokenizeLookupValue(value, "agents");
+        tokens.ExceptWith(legalSuffixes);
+        return string.Concat(tokens.OrderBy(token => token, StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static string BuildPrimaryPortKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var cleaned = RepairMojibake(value).Trim();
+        var parenthesisIndex = cleaned.IndexOf('(');
+        if (parenthesisIndex > 0)
+        {
+            cleaned = cleaned[..parenthesisIndex];
+        }
+
+        var genericTokens = new HashSet<string>(
+            [
+                "PORT", "PUERTO", "PTO", "TERMINAL", "PORTOF", "DE", "DEL",
+                "LA", "EL", "OF", "THE", "CHINA", "COSTA", "RICA", "HONDURAS",
+                "PANAMA", "MEXICO", "GUATEMALA", "NICARAGUA", "SALVADOR"
+            ],
+            StringComparer.OrdinalIgnoreCase
+        );
+        var decomposed = cleaned.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(decomposed.Length);
+
+        foreach (var character in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (character == '\uFFFD')
+            {
+                builder.Append('?');
+            }
+            else
+            {
+                builder.Append(char.IsLetterOrDigit(character)
+                    ? char.ToUpperInvariant(character)
+                    : ' ');
+            }
+        }
+
+        return builder
+            .ToString()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(token => token.Length >= 3 && !genericTokens.Contains(token))
+            ?? string.Empty;
+    }
+
+    private static bool WildcardEquivalent(string left, string right)
+    {
+        if (left.Length != right.Length || left.Length < 3)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Length; index++)
+        {
+            if (left[index] != '?' && right[index] != '?' && left[index] != right[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string RepairMojibake(string value)
+    {
+        if (!value.Contains('Ã') && !value.Contains('Â'))
+        {
+            return value;
+        }
+
+        try
+        {
+            var bytes = value.Select(character => (byte)Math.Min(character, byte.MaxValue)).ToArray();
+            var repaired = new UTF8Encoding(false, true).GetString(bytes);
+            return repaired.Contains('\uFFFD') ? value : repaired;
+        }
+        catch
+        {
+            return value;
+        }
     }
 
     private static decimal CalculateLookupScore(
@@ -836,7 +971,7 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             return string.Empty;
         }
 
-        var decomposed = value.Trim().Normalize(NormalizationForm.FormD);
+        var decomposed = RepairMojibake(value).Trim().Normalize(NormalizationForm.FormD);
         var builder = new StringBuilder(decomposed.Length);
 
         foreach (var character in decomposed)
