@@ -74,7 +74,7 @@ public static class CatalogItemEndpoints
                     );
                 }
             )
-            .RequireScope(ConfigScopeNames.CatalogSelectsView);
+            .RequireScope(ConfigScopeNames.CatalogSelectsSelect);
 
         group
             .MapGet(
