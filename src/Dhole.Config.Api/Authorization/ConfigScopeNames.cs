@@ -16,5 +16,6 @@ internal static class ConfigScopeNames
     public const string CatalogItemsChangeSortOrder = "config.catalog-items.change-sort-order";
 
     public const string CatalogSelectsView = "config.catalog-selects.view";
+    public const string CatalogSelectsSelect = "config.select";
     public const string CatalogItemsValidate = "config.catalog-items.validate";
 }
