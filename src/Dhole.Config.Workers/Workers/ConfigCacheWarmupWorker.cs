@@ -85,7 +85,7 @@ internal sealed class ConfigCacheWarmupWorker(
 
             var itemsSelect = items
                 .Select(x => new CatalogItemSelectDto(
-                    x.Slug,
+                    x.Value?.Trim() ?? string.Empty,
                     x.Name,
                     x.Id,
                     x.Code,
