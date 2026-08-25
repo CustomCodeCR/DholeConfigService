@@ -40,10 +40,9 @@ public sealed class GetCatalogItemsForSelectQueryHandler(
             cancellationToken
         );
 
-        // CatalogItemSelectDto.Value historically contained the slug. Pricing, however,
-        // uses the catalog item's configured Value as the business value sent in rates
-        // (for example Incoterms). Keep Slug available in its dedicated property and
-        // hydrate Value from the canonical Config item whenever the group is known.
+        // Value is the only business/display value exposed by Config selects.
+        // Code and Slug remain dedicated technical fields and are never used as
+        // fallback display values.
         if (!string.IsNullOrWhiteSpace(query.CatalogGroupSlug) && items.Count > 0)
         {
             var canonicalItems = await catalogItems.GetActiveByGroupSlugAsync(
@@ -57,14 +56,12 @@ public sealed class GetCatalogItemsForSelectQueryHandler(
                 {
                     if (!canonicalById.TryGetValue(item.Id, out var canonical))
                     {
-                        return item;
+                        return item with { Value = string.Empty };
                     }
 
                     return item with
                     {
-                        Value = string.IsNullOrWhiteSpace(canonical.Value)
-                            ? item.Slug
-                            : canonical.Value.Trim(),
+                        Value = canonical.Value?.Trim() ?? string.Empty,
                     };
                 })
                 .ToArray();
