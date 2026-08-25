@@ -53,28 +53,28 @@ public static class CatalogItemEndpoints
             )
             .RequireScope(ConfigScopeNames.CatalogItemsView);
 
-        group
-            .MapGet(
-                "/select",
-                async (
-                    Guid? catalogGroupId,
-                    string? catalogGroupSlug,
-                    string? search,
-                    IQueryDispatcher dispatcher,
-                    CancellationToken cancellationToken
-                ) =>
-                {
-                    var result = await dispatcher.DispatchAsync(
-                        new GetCatalogItemsForSelectQuery(catalogGroupId, catalogGroupSlug, search),
-                        cancellationToken
-                    );
+        // Select catalogs are reference data used by authenticated modules such as Pricing.
+        // They must not require Config administration permissions.
+        group.MapGet(
+            "/select",
+            async (
+                Guid? catalogGroupId,
+                string? catalogGroupSlug,
+                string? search,
+                IQueryDispatcher dispatcher,
+                CancellationToken cancellationToken
+            ) =>
+            {
+                var result = await dispatcher.DispatchAsync(
+                    new GetCatalogItemsForSelectQuery(catalogGroupId, catalogGroupSlug, search),
+                    cancellationToken
+                );
 
-                    return Results.Ok(
-                        ApiResponse<IReadOnlyCollection<CatalogItemSelectDto>>.Ok(result)
-                    );
-                }
-            )
-            .RequireScope(ConfigScopeNames.CatalogSelectsSelect);
+                return Results.Ok(
+                    ApiResponse<IReadOnlyCollection<CatalogItemSelectDto>>.Ok(result)
+                );
+            }
+        );
 
         group
             .MapGet(
@@ -281,7 +281,7 @@ public static class CatalogItemEndpoints
                 "/{catalogItemId:guid}",
                 async (
                     Guid catalogItemId,
-                    ICommandDispatcher dispatcher,
+                    IQueryDispatcher dispatcher,
                     HttpContext httpContext,
                     CancellationToken cancellationToken
                 ) =>
