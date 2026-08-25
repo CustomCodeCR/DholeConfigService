@@ -281,7 +281,7 @@ public static class CatalogItemEndpoints
                 "/{catalogItemId:guid}",
                 async (
                     Guid catalogItemId,
-                    IQueryDispatcher dispatcher,
+                    ICommandDispatcher dispatcher,
                     HttpContext httpContext,
                     CancellationToken cancellationToken
                 ) =>
