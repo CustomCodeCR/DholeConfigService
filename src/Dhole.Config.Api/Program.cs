@@ -27,9 +27,14 @@ builder.Services.AddCors(options =>
         {
             policy
                 .WithOrigins(
+                    "https://dhole.customcodecr.com",
+                    "https://sistema.logisticacastrofallas.com",
+                    "https://logisticacastrofallas.com",
+                    "https://www.logisticacastrofallas.com",
                     "http://localhost:5173",
                     "http://127.0.0.1:5173",
-                    "http://192.168.1.193:5173"
+                    "http://192.168.1.193:5173",
+                    "http://192.168.1.12:5173"
                 )
                 .AllowAnyHeader()
                 .AllowAnyMethod();
