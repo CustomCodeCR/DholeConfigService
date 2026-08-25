@@ -19,10 +19,10 @@ internal static class ConfigCacheKeys
 
     public static string CatalogItemsSelectByGroupSlug(string catalogGroupSlug)
     {
-        // v2: select values now expose CatalogItem.Value instead of duplicating Slug.
-        // Version the key so Redis cannot serve stale select snapshots created with
-        // the old semantics after a deployment.
-        return $"config:catalog-groups:slug:{Normalize(catalogGroupSlug)}:items:select:v2";
+        // v3: select Value is strictly CatalogItem.Value. Slug/Code are never used
+        // as fallback display values. Versioning prevents Redis from serving old
+        // select snapshots where Value contained Slug.
+        return $"config:catalog-groups:slug:{Normalize(catalogGroupSlug)}:items:select:v3";
     }
 
     public static string CatalogItemLookup(string catalogGroupSlug, string catalogItemSlug)
