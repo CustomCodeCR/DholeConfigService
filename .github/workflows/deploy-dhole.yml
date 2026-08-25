@@ -31,6 +31,7 @@ jobs:
           docker version
           docker compose version
           docker network inspect dhole >/dev/null
+          command -v curl >/dev/null
           test -r /opt/dhole/.env
           test -r "$COMPOSE_FILE"
           docker compose --env-file /opt/dhole/.env -f "$COMPOSE_FILE" config -q
@@ -52,5 +53,34 @@ jobs:
           docker compose --env-file /opt/dhole/.env -f "$COMPOSE_FILE" up -d --no-deps --force-recreate --pull never config-api config-workers
           docker compose --env-file /opt/dhole/.env -f "$COMPOSE_FILE" ps config-api config-workers
 
+      - name: Verify Config API health
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONTAINER_ID="$(docker compose --env-file /opt/dhole/.env -f "$COMPOSE_FILE" ps -q config-api)"
+          test -n "$CONTAINER_ID"
+
+          for attempt in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_ID" 2>/dev/null || true)" != "true" ]; then
+              echo "config-api stopped during startup"
+              docker logs --tail 200 "$CONTAINER_ID" || true
+              exit 1
+            fi
+
+            CONFIG_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_ID")"
+            if [ -n "$CONFIG_IP" ] && curl -fsS --max-time 2 "http://${CONFIG_IP}:8080/health" >/dev/null; then
+              echo "config-api is healthy at ${CONFIG_IP}:8080"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "config-api did not become healthy"
+          docker inspect "$CONTAINER_ID" || true
+          docker logs --tail 200 "$CONTAINER_ID" || true
+          exit 1
+
       - name: Cleanup old images
+        if: always()
         run: docker image prune -f
