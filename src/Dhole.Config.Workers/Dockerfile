@@ -3,7 +3,7 @@
 # Base image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 RUN apt-get update && \
-  apt-get install -y tzdata apt-utils libgdiplus libc6-dev && \
+  apt-get install -y tzdata apt-utils libgdiplus libc6-dev libgssapi-krb5-2 && \
   ln -s /usr/lib/libgdiplus.so /usr/lib/gdiplus.dll && \
   rm -rf /var/lib/apt/lists/*
 
