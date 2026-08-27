@@ -48,19 +48,12 @@ public sealed class AuditEndpointMiddleware(
     {
         await next(context);
 
-        if (!ShouldAudit(context))
-        {
-            return;
-        }
+        if (!ShouldAudit(context)) return;
 
         try
         {
             var dbContext = context.RequestServices.GetService<ServiceDbContext>();
-
-            if (dbContext is null)
-            {
-                return;
-            }
+            if (dbContext is null) return;
 
             var auditContext = AuditExecutionContextAccessor.Current;
             var correlationId = auditContext?.CorrelationId ?? Guid.NewGuid();
@@ -77,10 +70,8 @@ public sealed class AuditEndpointMiddleware(
 
             var metadata = new
             {
-                RouteValues = context.Request.RouteValues.ToDictionary(
-                    x => x.Key,
-                    x => x.Value?.ToString()
-                ),
+                AuditLayer = "endpoint",
+                RouteValues = context.Request.RouteValues.ToDictionary(x => x.Key, x => x.Value?.ToString()),
                 Query = context.Request.Query.ToDictionary(x => x.Key, x => x.Value.ToString()),
                 TraceIdentifier = context.TraceIdentifier,
             };
@@ -103,9 +94,7 @@ public sealed class AuditEndpointMiddleware(
                 AfterJson = (string?)null,
                 PayloadJson = JsonSerializer.Serialize(requestPayload, JsonOptions),
                 Metadata = JsonSerializer.Serialize(metadata, JsonOptions),
-                ErrorMessage = context.Response.StatusCode >= 400
-                    ? $"HTTP {context.Response.StatusCode}"
-                    : null,
+                ErrorMessage = context.Response.StatusCode >= 400 ? $"HTTP {context.Response.StatusCode}" : null,
                 StackTrace = (string?)null,
                 Details = Array.Empty<object>(),
             };
@@ -131,84 +120,46 @@ public sealed class AuditEndpointMiddleware(
         }
         catch (OperationCanceledException)
         {
-            // Request aborted. Do not fail the pipeline because of audit.
         }
         catch (Exception exception)
         {
-            logger.LogError(
-                exception,
-                "Failed to create read audit event for {Method} {Path}.",
-                context.Request.Method,
-                context.Request.Path.Value
-            );
+            logger.LogError(exception, "Failed to audit Config action {Method} {Path}.", context.Request.Method, context.Request.Path.Value);
         }
     }
 
     private static bool ShouldAudit(HttpContext context)
     {
-        if (!context.Request.Path.StartsWithSegments("/api"))
-        {
-            return false;
-        }
-
+        if (!context.Request.Path.StartsWithSegments("/api")) return false;
         var path = context.Request.Path.Value ?? string.Empty;
-
-        if (IgnoredPathPrefixes.Any(x => path.StartsWith(x, StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        // La auditoría de negocio se genera en los command handlers.
-        // El middleware solo conserva eventos técnicos de seguridad/error.
-        var statusCode = context.Response.StatusCode;
-
-        return statusCode == StatusCodes.Status401Unauthorized
-            || statusCode == StatusCodes.Status403Forbidden
-            || statusCode >= StatusCodes.Status500InternalServerError;
+        return !IgnoredPathPrefixes.Any(x => path.StartsWith(x, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string ResolveAction(HttpContext context)
     {
-        return context.Response.StatusCode switch
+        if (context.Response.StatusCode == StatusCodes.Status401Unauthorized) return "unauthorized";
+        if (context.Response.StatusCode == StatusCodes.Status403Forbidden) return "forbidden";
+        if (context.Response.StatusCode >= 500) return "http_error";
+
+        return context.Request.Method.ToUpperInvariant() switch
         {
-            StatusCodes.Status401Unauthorized => "unauthorized",
-            StatusCodes.Status403Forbidden => "forbidden",
-            >= StatusCodes.Status500InternalServerError => "http_error",
-            _ => "http_event",
+            "GET" or "HEAD" => "viewed",
+            "POST" => "created",
+            "PUT" or "PATCH" => "updated",
+            "DELETE" => "deleted",
+            _ => "executed",
         };
     }
 
     private static string ResolveEventType(HttpContext context)
-    {
-        return context.Response.StatusCode switch
-        {
-            StatusCodes.Status401Unauthorized => "auth.access.unauthorized",
-            StatusCodes.Status403Forbidden => "auth.access.forbidden",
-            >= StatusCodes.Status500InternalServerError => "auth.http.error",
-            _ => "auth.http.event",
-        };
-    }
+        => $"config.http.{ResolveEntityType(context)?.ToLowerInvariant() ?? "request"}.{ResolveAction(context)}";
 
     private static string? ResolveEntityType(HttpContext context)
     {
-        var segments = context
-            .Request.Path.Value?.Trim('/')
-            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var segments = context.Request.Path.Value?.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments is null || segments.Length == 0) return null;
 
-        if (segments is null || segments.Length == 0)
-        {
-            return null;
-        }
-
-        var apiIndex = Array.FindIndex(
-            segments,
-            x => x.Equals("api", StringComparison.OrdinalIgnoreCase)
-        );
-
-        if (apiIndex < 0 || apiIndex + 1 >= segments.Length)
-        {
-            return segments.LastOrDefault();
-        }
+        var apiIndex = Array.FindIndex(segments, x => x.Equals("api", StringComparison.OrdinalIgnoreCase));
+        if (apiIndex < 0 || apiIndex + 1 >= segments.Length) return segments.LastOrDefault();
 
         return ToEntityType(segments[apiIndex + 1]);
     }
@@ -217,12 +168,15 @@ public sealed class AuditEndpointMiddleware(
     {
         return value.Trim().ToLowerInvariant() switch
         {
-            "auth" => "Auth",
-            "users" => "User",
-            "roles" => "Role",
-            "scopes" => "Scope",
-            "sessions" => "Session",
-            "permissions" => "Permission",
+            "catalog-groups" => "CatalogGroup",
+            "catalog-items" => "CatalogItem",
+            "departments" => "Department",
+            "department-types" => "DepartmentType",
+            "menus" => "Menu",
+            "menu-items" => "MenuItem",
+            "routes" => "Route",
+            "parameters" => "Parameter",
+            "feature-flags" => "FeatureFlag",
             _ => value,
         };
     }
@@ -231,34 +185,15 @@ public sealed class AuditEndpointMiddleware(
     {
         foreach (var key in EntityIdKeys)
         {
-            if (
-                context.Request.RouteValues.TryGetValue(key, out var routeValue)
-                && Guid.TryParse(routeValue?.ToString(), out var routeGuid)
-            )
-            {
+            if (context.Request.RouteValues.TryGetValue(key, out var routeValue) && Guid.TryParse(routeValue?.ToString(), out var routeGuid))
                 return routeGuid;
-            }
-
-            if (
-                context.Request.Query.TryGetValue(key, out var queryValue)
-                && Guid.TryParse(queryValue.ToString(), out var queryGuid)
-            )
-            {
+            if (context.Request.Query.TryGetValue(key, out var queryValue) && Guid.TryParse(queryValue.ToString(), out var queryGuid))
                 return queryGuid;
-            }
         }
 
-        var segments =
-            context.Request.Path.Value?.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries)
-            ?? [];
-
+        var segments = context.Request.Path.Value?.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries) ?? [];
         foreach (var segment in segments)
-        {
-            if (Guid.TryParse(segment, out var guid))
-            {
-                return guid;
-            }
-        }
+            if (Guid.TryParse(segment, out var guid)) return guid;
 
         return null;
     }
