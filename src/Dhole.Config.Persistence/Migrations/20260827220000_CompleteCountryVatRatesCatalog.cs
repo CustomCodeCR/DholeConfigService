@@ -22,8 +22,8 @@ public sealed class CompleteCountryVatRatesCatalog : Migration
                    TRUE, TRUE, NOW(), 'migration', FALSE
             FROM config."CatalogGroups" cg
             CROSS JOIN (VALUES
-                ('c2100000-0000-4000-8000-000000000002'::uuid, 'PA', 'panama', 'Panamá', '7', '{"countryCode":"PA","vatRate":7}', 20),
-                ('c2100000-0000-4000-8000-000000000003'::uuid, 'GT', 'guatemala', 'Guatemala', '15', '{"countryCode":"GT","vatRate":15}', 30)
+                ('8e2710bb-89e8-4b9c-bc0c-55bb4da2e88e'::uuid, 'PA', 'panama', 'Panamá', '7', '{"countryCode":"PA","vatRate":7}', 20),
+                ('58dc67bd-7948-4a12-b418-a7fd072f25e0'::uuid, 'GT', 'guatemala', 'Guatemala', '15', '{"countryCode":"GT","vatRate":15}', 30)
             ) AS v(id, code, slug, name, value, metadata_json, sort_order)
             WHERE cg.slug = 'country-vat-rates'
               AND NOT EXISTS (
