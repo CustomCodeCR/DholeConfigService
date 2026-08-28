@@ -14,34 +14,15 @@ public sealed class AddPricingCommercialQuickCatalogsAndWarehouseDirectory : Mig
     {
         migrationBuilder.Sql(
             """
-            -- Temporary commercial master data. These groups intentionally are NOT system catalogs,
-            -- so they can be removed when the future Commercial module becomes the source of truth.
             INSERT INTO config."CatalogGroups"
                 (id, code, slug, name, description, metadata_json, is_system, is_active, created_at_utc, created_by, is_deleted)
             VALUES
-                (
-                    'c2800000-0000-4000-8000-000000000001'::uuid,
-                    'PRICING_SALES_EXECUTIVES',
-                    'pricing-sales-executives',
-                    'Ejecutivos comerciales (temporal)',
-                    'Catálogo temporal de ejecutivos comerciales para Pricing. Eliminar cuando el módulo Comercial sea la fuente de verdad.',
-                    '{"pricingWorkflow":true,"temporary":true,"replaceWith":"commercial-module","metadataFields":["email","companyPhone","extension","mobile"]}'::jsonb,
-                    FALSE, TRUE, NOW(), 'migration', FALSE
-                ),
-                (
-                    'c2800000-0000-4000-8000-000000000002'::uuid,
-                    'PRICING_CLIENTS',
-                    'pricing-clients',
-                    'Clientes (temporal)',
-                    'Catálogo temporal de clientes para Pricing. Eliminar cuando el módulo Comercial sea la fuente de verdad.',
-                    '{"pricingWorkflow":true,"temporary":true,"replaceWith":"commercial-module","metadataFields":["contactName","contactEmail","contactPhone","companyAddress","salesExecutiveId"]}'::jsonb,
-                    FALSE, TRUE, NOW(), 'migration', FALSE
-                )
+                ('c2800000-0000-4000-8000-000000000001'::uuid, 'PRICING_SALES_EXECUTIVES', 'pricing-sales-executives', 'Ejecutivos comerciales (temporal)', 'Catálogo temporal de ejecutivos comerciales para Pricing. Se elimina cuando el módulo Comercial sea la fuente de verdad.', '{"pricingWorkflow":true,"temporary":true,"replaceWith":"commercial-module","metadataFields":["email","companyPhone","extension","mobile"]}'::jsonb, FALSE, TRUE, NOW(), 'migration', FALSE),
+                ('c2800000-0000-4000-8000-000000000002'::uuid, 'PRICING_CLIENTS', 'pricing-clients', 'Clientes (temporal)', 'Catálogo temporal de clientes para Pricing. Se elimina cuando el módulo Comercial sea la fuente de verdad.', '{"pricingWorkflow":true,"temporary":true,"replaceWith":"commercial-module","metadataFields":["contactName","contactEmail","contactPhone","companyAddress","salesExecutiveId"]}'::jsonb, FALSE, TRUE, NOW(), 'migration', FALSE)
             ON CONFLICT DO NOTHING;
 
             UPDATE config."CatalogGroups"
-            SET metadata_json = COALESCE(metadata_json, '{}'::jsonb)
-                    || '{"pricingWorkflow":true,"temporary":true,"replaceWith":"commercial-module"}'::jsonb,
+            SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || '{"pricingWorkflow":true,"temporary":true,"replaceWith":"commercial-module"}'::jsonb,
                 is_system = FALSE,
                 is_active = TRUE,
                 is_deleted = FALSE,
@@ -51,10 +32,9 @@ public sealed class AddPricingCommercialQuickCatalogsAndWarehouseDirectory : Mig
                 updated_by = 'migration'
             WHERE slug IN ('pricing-sales-executives', 'pricing-clients');
 
-            -- Enrich the existing FCA WHS catalog with the fields supplied by Pricing.
             UPDATE config."CatalogGroups"
-            SET metadata_json = COALESCE(metadata_json, '{}'::jsonb)
-                    || '{"pricingWorkflow":true,"modality":"Global","locationCatalog":true,"metadataFields":["address","countryCode","schedule","contacts","email","phone","latitude","longitude"]}'::jsonb,
+            SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || '{"pricingWorkflow":true,"modality":"Global","locationCatalog":true,"metadataFields":["address","countryCode","schedule","contacts","email","phone","latitude","longitude"]}'::jsonb,
+                is_system = FALSE,
                 is_active = TRUE,
                 is_deleted = FALSE,
                 deleted_at_utc = NULL,
@@ -99,21 +79,19 @@ public sealed class AddPricingCommercialQuickCatalogsAndWarehouseDirectory : Mig
               )
             ON CONFLICT DO NOTHING;
 
-            -- Requested POL/POE locations. Milan is explicitly an inland point.
-            WITH desired(id, code, slug, name, value, metadata_json, sort_order) AS (
+            WITH desired(group_slug, id, code, slug, name, value, metadata_json, sort_order) AS (
                 VALUES
-                    ('c2820000-0000-4000-8000-000000000001'::uuid, 'PLGDY', 'gdynia-poland-cy', '⚓ Gdynia, Polonia (CY)', 'Gdynia, Polonia (CY)', '{"countryCode":"PL","terminalType":"CY","locationType":"seaport","icon":"anchor"}', 980),
-                    ('c2820000-0000-4000-8000-000000000002'::uuid, 'ITMIL', 'milan-italy-icd', '🚚 Milan, Italy (ICD / Inland Point)', 'Milan, Italy (ICD / Inland Point)', '{"countryCode":"IT","terminalType":"ICD","locationType":"inland","icon":"truck"}', 990)
+                    ('pol', 'c2820000-0000-4000-8000-000000000001'::uuid, 'PLGDY', 'gdynia-poland-cy', '⚓ Gdynia, Polonia (CY)', 'Gdynia, Polonia (CY)', '{"countryCode":"PL","terminalType":"CY","locationType":"seaport","icon":"anchor"}', 980),
+                    ('poe', 'c2820000-0000-4000-8000-000000000011'::uuid, 'PLGDY', 'gdynia-poland-cy', '⚓ Gdynia, Polonia (CY)', 'Gdynia, Polonia (CY)', '{"countryCode":"PL","terminalType":"CY","locationType":"seaport","icon":"anchor"}', 980),
+                    ('pol', 'c2820000-0000-4000-8000-000000000002'::uuid, 'ITMIL', 'milan-italy-icd', '🚚 Milan, Italy (ICD / Inland Point)', 'Milan, Italy (ICD / Inland Point)', '{"countryCode":"IT","terminalType":"ICD","locationType":"inland","icon":"truck"}', 990),
+                    ('poe', 'c2820000-0000-4000-8000-000000000012'::uuid, 'ITMIL', 'milan-italy-icd', '🚚 Milan, Italy (ICD / Inland Point)', 'Milan, Italy (ICD / Inland Point)', '{"countryCode":"IT","terminalType":"ICD","locationType":"inland","icon":"truck"}', 990)
             )
             INSERT INTO config."CatalogItems"
                 (id, catalog_group_id, code, slug, name, description, value, metadata_json, sort_order, is_system, is_active, created_at_utc, created_by, is_deleted)
-            SELECT
-                CASE WHEN g.slug = 'pol' THEN d.id ELSE (d.id::text::uuid + '00000000-0000-0000-0000-000000000010'::uuid) END,
-                g.id, d.code, d.slug, d.name, 'Ubicación agregada para Pricing.', d.value, d.metadata_json::jsonb, d.sort_order, FALSE, TRUE, NOW(), 'migration', FALSE
+            SELECT d.id, g.id, d.code, d.slug, d.name, 'Ubicación agregada para Pricing.', d.value, d.metadata_json::jsonb, d.sort_order, FALSE, TRUE, NOW(), 'migration', FALSE
             FROM config."CatalogGroups" g
-            CROSS JOIN desired d
-            WHERE g.slug IN ('pol', 'poe')
-              AND g.is_deleted = FALSE
+            JOIN desired d ON d.group_slug = g.slug
+            WHERE g.is_deleted = FALSE
               AND NOT EXISTS (
                   SELECT 1 FROM config."CatalogItems" i
                   WHERE i.catalog_group_id = g.id
