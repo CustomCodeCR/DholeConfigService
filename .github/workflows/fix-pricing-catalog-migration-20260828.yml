@@ -1,0 +1,80 @@
+name: Repair pricing catalog migration
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/fix-pricing-catalog-migration-20260828.yml'
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  patch:
+    runs-on: [self-hosted, linux, x64, dhole]
+    steps:
+      - name: Checkout config
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repair POL and POE seed SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/Dhole.Config.Persistence/Migrations/20260828142000_AddPricingCommercialQuickCatalogsAndWarehouseDirectory.cs')
+          text = path.read_text(encoding='utf-8')
+          marker = '            -- Requested POL/POE locations. Milan is explicitly an inland point.\n'
+          start = text.index(marker)
+          end_token = '            ON CONFLICT DO NOTHING;\n'
+          end = text.index(end_token, start) + len(end_token)
+
+          replacement = '''            -- Requested POL/POE locations. Milan is explicitly an inland point.
+            WITH desired(group_slug, id, code, slug, name, value, metadata_json, sort_order) AS (
+                VALUES
+                    ('pol', 'c2820000-0000-4000-8000-000000000001'::uuid, 'PLGDY', 'gdynia-poland-cy', '⚓ Gdynia, Polonia (CY)', 'Gdynia, Polonia (CY)', '{"countryCode":"PL","terminalType":"CY","locationType":"seaport","icon":"anchor"}', 980),
+                    ('poe', 'c2820000-0000-4000-8000-000000000011'::uuid, 'PLGDY', 'gdynia-poland-cy', '⚓ Gdynia, Polonia (CY)', 'Gdynia, Polonia (CY)', '{"countryCode":"PL","terminalType":"CY","locationType":"seaport","icon":"anchor"}', 980),
+                    ('pol', 'c2820000-0000-4000-8000-000000000002'::uuid, 'ITMIL', 'milan-italy-icd', '🚚 Milan, Italy (ICD / Inland Point)', 'Milan, Italy (ICD / Inland Point)', '{"countryCode":"IT","terminalType":"ICD","locationType":"inland","icon":"truck"}', 990),
+                    ('poe', 'c2820000-0000-4000-8000-000000000012'::uuid, 'ITMIL', 'milan-italy-icd', '🚚 Milan, Italy (ICD / Inland Point)', 'Milan, Italy (ICD / Inland Point)', '{"countryCode":"IT","terminalType":"ICD","locationType":"inland","icon":"truck"}', 990)
+            )
+            INSERT INTO config."CatalogItems"
+                (id, catalog_group_id, code, slug, name, description, value, metadata_json, sort_order, is_system, is_active, created_at_utc, created_by, is_deleted)
+            SELECT d.id, g.id, d.code, d.slug, d.name, 'Ubicación agregada para Pricing.', d.value, d.metadata_json::jsonb, d.sort_order, FALSE, TRUE, NOW(), 'migration', FALSE
+            FROM config."CatalogGroups" g
+            JOIN desired d ON d.group_slug = g.slug
+            WHERE g.is_deleted = FALSE
+              AND NOT EXISTS (
+                  SELECT 1 FROM config."CatalogItems" i
+                  WHERE i.catalog_group_id = g.id
+                    AND i.is_deleted = FALSE
+                    AND (UPPER(i.code) = UPPER(d.code) OR LOWER(i.slug) = LOWER(d.slug) OR LOWER(i.name) = LOWER(d.name))
+              )
+            ON CONFLICT DO NOTHING;
+'''
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          PY
+
+      - name: Validate solution
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          dotnet restore DholeConfigService.slnx --configfile NuGet.Config
+          dotnet build DholeConfigService.slnx --configuration Release --no-restore
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/fix-pricing-catalog-migration-20260828.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(config): seed pricing locations with valid ids"
+          git push origin HEAD:master
