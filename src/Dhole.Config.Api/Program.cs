@@ -4,6 +4,7 @@ using CustomCodeFramework.Core.Abstractions;
 using Dhole.Config.Api.Endpoints;
 using Dhole.Config.Api.Grpc;
 using Dhole.Config.Api.Middleware;
+using Dhole.Config.Application.Abstractions.Cache;
 using Dhole.Config.Application.DependencyInjection;
 using Dhole.Config.Infrastructure.DependencyInjection;
 using Dhole.Config.Infrastructure.Time;
@@ -88,8 +89,24 @@ app.MapCatalogItemEndpoints();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ServiceDbContext>();
-
     await dbContext.Database.MigrateAsync();
+
+    // Some catalog migrations seed reference data directly in PostgreSQL. Clear the
+    // Redis-backed catalog caches after migrations so newly seeded WHS/items are
+    // visible immediately to Pricing instead of serving a stale empty select list.
+    var cache = scope.ServiceProvider.GetRequiredService<IConfigCacheService>();
+    foreach (var slug in new[]
+             {
+                 "pricing-warehouses",
+                 "pricing-clients",
+                 "pricing-sales-executives",
+                 "country-vat-rates",
+                 "pol",
+                 "poe",
+             })
+    {
+        await cache.RemoveCatalogGroupCacheAsync(slug);
+    }
 }
 
 app.Run();
