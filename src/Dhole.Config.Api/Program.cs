@@ -97,6 +97,7 @@ using (var scope = app.Services.CreateScope())
     var cache = scope.ServiceProvider.GetRequiredService<IConfigCacheService>();
     foreach (var slug in new[]
              {
+                 "internal-directory",
                  "employee-directory",
                  "pricing-warehouses",
                  "pricing-clients",
