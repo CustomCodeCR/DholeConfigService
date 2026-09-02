@@ -70,6 +70,13 @@ jobs:
           RESPONSE="$(curl -fsS --max-time 10 "$LOOKUP_URL")"
           printf '%s' "$RESPONSE" | grep -q '"code":"WHS_QINGDAO"'
           printf '%s' "$RESPONSE" | grep -q '"sourceCatalog":"pricing-warehouses"'
+      - name: Verify QR lookup through staging gateway
+        run: |
+          set -euo pipefail
+          LOOKUP_URL="http://127.0.0.1:18080/api/config/public/pricing-warehouses/resolve?pol=Qingdao%2C%20China&shipmentMode=Fcl&route=Qingdao%2C%20China%20-%20Puerto%20Caldera%2C%20Costa%20Rica"
+          RESPONSE="$(curl -fsS --max-time 10 "$LOOKUP_URL")"
+          printf '%s' "$RESPONSE" | grep -q '"code":"WHS_QINGDAO"'
+          printf '%s' "$RESPONSE" | grep -q '"sourceCatalog":"pricing-warehouses"'
       - name: Cleanup old images
         if: always()
         run: docker image prune -f
