@@ -86,6 +86,7 @@ app.MapGrpcService<ConfigCatalogGrpcService>();
 app.MapCatalogGroupEndpoints();
 app.MapCatalogItemEndpoints();
 app.MapPublicPricingWarehouseEndpoints();
+app.MapPublicPricingWarehouseLookupEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
