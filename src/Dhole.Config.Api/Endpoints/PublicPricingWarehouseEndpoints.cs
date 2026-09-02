@@ -10,7 +10,7 @@ public static class PublicPricingWarehouseEndpoints
 {
     public static IEndpointRouteBuilder MapPublicPricingWarehouseEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/config/public/origin-offices/{polCode}", GetByPolAsync)
+        app.MapGet("/api/config/public/origin-offices/{polLocator}", GetByPolAsync)
             .WithTags("Public origin offices")
             .AllowAnonymous();
 
@@ -18,17 +18,34 @@ public static class PublicPricingWarehouseEndpoints
     }
 
     private static async Task<IResult> GetByPolAsync(
-        string polCode,
+        string polLocator,
+        string? polValue,
+        string? polCode,
+        Guid? polId,
         string? shipmentMode,
         string? route,
         ServiceDbContext db,
         CancellationToken cancellationToken)
     {
-        var normalizedPol = (polCode ?? string.Empty).Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(normalizedPol)) return Results.BadRequest();
+        var locator = string.IsNullOrWhiteSpace(polValue) ? polLocator : polValue;
+        var normalizedLocator = Normalize(locator);
+        var normalizedPolCode = Normalize(polCode);
+        if (string.IsNullOrWhiteSpace(normalizedLocator) && !polId.HasValue) return Results.BadRequest();
 
         await using var connection = db.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(cancellationToken);
+
+        // The public QR carries the Pricing POL id. Resolve it back to Config's catalog item
+        // and use CatalogItem.Value as the primary WHS locator. Code is only a compatibility fallback.
+        var resolvedPolValue = await ResolvePolValueAsync(
+            connection,
+            polId,
+            normalizedLocator,
+            cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(resolvedPolValue)) return Results.NotFound();
+
+        var polIdText = polId?.ToString("D") ?? string.Empty;
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -40,19 +57,45 @@ public static class PublicPricingWarehouseEndpoints
               AND item.is_deleted = FALSE
               AND item.is_active = TRUE
               AND (
-                    UPPER(item.code) = UPPER('WHS_' || @pol)
+                    UPPER(COALESCE(item.value, '')) = UPPER(@pol_value)
+                    OR UPPER(item.code) = UPPER('WHS_' || @pol_value)
+                    OR UPPER(COALESCE(item.metadata_json->>'polValue', '')) = UPPER(@pol_value)
+                    OR EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(COALESCE(item.metadata_json->'polValues', '[]'::jsonb)) pol(value)
+                        WHERE UPPER(pol.value) = UPPER(@pol_value)
+                    )
                     OR EXISTS (
                         SELECT 1
                         FROM jsonb_array_elements_text(COALESCE(item.metadata_json->'polCodes', '[]'::jsonb)) pol(value)
-                        WHERE UPPER(pol.value) = UPPER(@pol)
+                        WHERE UPPER(pol.value) = UPPER(@pol_value)
+                           OR (@pol_code <> '' AND UPPER(pol.value) = UPPER(@pol_code))
                     )
+                    OR (@pol_code <> '' AND UPPER(item.code) = UPPER('WHS_' || @pol_code))
+                    OR (@pol_code <> '' AND UPPER(COALESCE(item.metadata_json->>'polCode', '')) = UPPER(@pol_code))
+                    OR (@pol_id <> '' AND UPPER(COALESCE(item.metadata_json->>'polId', '')) = UPPER(@pol_id))
+                    OR (@pol_id <> '' AND EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(COALESCE(item.metadata_json->'polIds', '[]'::jsonb)) pol(value)
+                        WHERE UPPER(pol.value) = UPPER(@pol_id)
+                    ))
               )
-            ORDER BY CASE WHEN UPPER(item.code) = UPPER('WHS_' || @pol) THEN 0 ELSE 1 END,
-                     item.sort_order,
-                     item.name
+            ORDER BY
+                CASE
+                    WHEN UPPER(COALESCE(item.value, '')) = UPPER(@pol_value) THEN 0
+                    WHEN @pol_id <> '' AND UPPER(COALESCE(item.metadata_json->>'polId', '')) = UPPER(@pol_id) THEN 1
+                    WHEN UPPER(COALESCE(item.metadata_json->>'polValue', '')) = UPPER(@pol_value) THEN 2
+                    WHEN UPPER(item.code) = UPPER('WHS_' || @pol_value) THEN 3
+                    WHEN @pol_code <> '' AND UPPER(item.code) = UPPER('WHS_' || @pol_code) THEN 4
+                    ELSE 5
+                END,
+                item.sort_order,
+                item.name
             LIMIT 1;
             """;
-        Add(command, "pol", normalizedPol);
+        Add(command, "pol_value", resolvedPolValue);
+        Add(command, "pol_code", normalizedPolCode);
+        Add(command, "pol_id", polIdText);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return Results.NotFound();
@@ -72,7 +115,9 @@ public static class PublicPricingWarehouseEndpoints
             id,
             name,
             code,
-            polCode = normalizedPol,
+            polId,
+            polValue = resolvedPolValue,
+            polCode = normalizedPolCode,
             address = ReadString(root, "address") ?? ReadString(root, "fullAddress") ?? string.Empty,
             city = ReadString(root, "city") ?? string.Empty,
             country = ReadString(root, "country") ?? string.Empty,
@@ -82,6 +127,33 @@ public static class PublicPricingWarehouseEndpoints
             photos,
             message = "Estos son los datos de Castro Fallas en origen."
         });
+    }
+
+    private static async Task<string> ResolvePolValueAsync(
+        DbConnection connection,
+        Guid? polId,
+        string fallback,
+        CancellationToken cancellationToken)
+    {
+        if (!polId.HasValue || polId.Value == Guid.Empty) return fallback;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COALESCE(NULLIF(BTRIM(item.value), ''), NULLIF(BTRIM(item.name), ''), item.code)
+            FROM config."CatalogItems" item
+            INNER JOIN config."CatalogGroups" catalog_group ON catalog_group.id = item.catalog_group_id
+            WHERE item.id = @pol_id
+              AND catalog_group.slug IN ('ports', 'pol')
+              AND catalog_group.is_deleted = FALSE
+              AND item.is_deleted = FALSE
+              AND item.is_active = TRUE
+            LIMIT 1;
+            """;
+        Add(command, "pol_id", polId.Value);
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var value = result is null || result is DBNull ? null : Convert.ToString(result);
+        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
 
     private static PublicContact[] ReadContacts(JsonElement root, string? shipmentMode, string? route)
