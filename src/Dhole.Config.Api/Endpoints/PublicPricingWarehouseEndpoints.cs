@@ -35,8 +35,9 @@ public static class PublicPricingWarehouseEndpoints
         await using var connection = db.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(cancellationToken);
 
-        // The public QR carries the Pricing POL id. Resolve it back to Config's catalog item
-        // and use CatalogItem.Value as the primary WHS locator. Code is only a compatibility fallback.
+        // New QR links carry the Pricing POL id; legacy links may only carry the port code.
+        // Both paths are resolved against Config's ports catalog and CatalogItem.Value is the
+        // canonical locator used to find the WHS.
         var resolvedPolValue = await ResolvePolValueAsync(
             connection,
             polId,
@@ -135,25 +136,55 @@ public static class PublicPricingWarehouseEndpoints
         string fallback,
         CancellationToken cancellationToken)
     {
-        if (!polId.HasValue || polId.Value == Guid.Empty) return fallback;
+        if (polId.HasValue && polId.Value != Guid.Empty)
+        {
+            await using var byId = connection.CreateCommand();
+            byId.CommandText = """
+                SELECT COALESCE(NULLIF(BTRIM(item.value), ''), NULLIF(BTRIM(item.name), ''), item.code)
+                FROM config."CatalogItems" item
+                INNER JOIN config."CatalogGroups" catalog_group ON catalog_group.id = item.catalog_group_id
+                WHERE item.id = @pol_id
+                  AND catalog_group.slug IN ('ports', 'pol')
+                  AND catalog_group.is_deleted = FALSE
+                  AND item.is_deleted = FALSE
+                  AND item.is_active = TRUE
+                LIMIT 1;
+                """;
+            Add(byId, "pol_id", polId.Value);
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+            var result = await byId.ExecuteScalarAsync(cancellationToken);
+            var value = result is null || result is DBNull ? null : Convert.ToString(result);
+            if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(fallback)) return fallback;
+
+        // Backwards compatibility for PDFs generated before polId/polValue were added to the QR.
+        // If the locator is CNTAO/CNSHA/etc., resolve that CODE to the catalog item's VALUE first.
+        await using var byLocator = connection.CreateCommand();
+        byLocator.CommandText = """
             SELECT COALESCE(NULLIF(BTRIM(item.value), ''), NULLIF(BTRIM(item.name), ''), item.code)
             FROM config."CatalogItems" item
             INNER JOIN config."CatalogGroups" catalog_group ON catalog_group.id = item.catalog_group_id
-            WHERE item.id = @pol_id
-              AND catalog_group.slug IN ('ports', 'pol')
+            WHERE catalog_group.slug IN ('ports', 'pol')
               AND catalog_group.is_deleted = FALSE
               AND item.is_deleted = FALSE
               AND item.is_active = TRUE
+              AND (
+                    UPPER(item.code) = UPPER(@locator)
+                    OR UPPER(COALESCE(item.value, '')) = UPPER(@locator)
+                    OR UPPER(item.name) = UPPER(@locator)
+              )
+            ORDER BY CASE WHEN UPPER(item.code) = UPPER(@locator) THEN 0 ELSE 1 END,
+                     item.sort_order,
+                     item.name
             LIMIT 1;
             """;
-        Add(command, "pol_id", polId.Value);
+        Add(byLocator, "locator", fallback);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        var value = result is null || result is DBNull ? null : Convert.ToString(result);
-        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        var locatorResult = await byLocator.ExecuteScalarAsync(cancellationToken);
+        var locatorValue = locatorResult is null || locatorResult is DBNull ? null : Convert.ToString(locatorResult);
+        return string.IsNullOrWhiteSpace(locatorValue) ? fallback : locatorValue.Trim();
     }
 
     private static PublicContact[] ReadContacts(JsonElement root, string? shipmentMode, string? route)
