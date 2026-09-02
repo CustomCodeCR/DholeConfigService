@@ -124,7 +124,7 @@ public static class PublicPricingWarehouseEndpoints
                 {
                     storageId,
                     fileName = ReadString(image, "fileName") ?? string.Empty,
-                    publicContentPath = $"/api/storage/api/v1/storage/files/{Uri.EscapeDataString(storageId)}/public-content"
+                    publicContentPath = $"/api/storage/api/v1/storage/files/{Uri.EscapeDataString(storageId)}/content"
                 });
             }
         }
@@ -138,7 +138,7 @@ public static class PublicPricingWarehouseEndpoints
                 {
                     storageId,
                     fileName = ReadString(root, "imageFileName") ?? string.Empty,
-                    publicContentPath = $"/api/storage/api/v1/storage/files/{Uri.EscapeDataString(storageId)}/public-content"
+                    publicContentPath = $"/api/storage/api/v1/storage/files/{Uri.EscapeDataString(storageId)}/content"
                 });
             }
         }
