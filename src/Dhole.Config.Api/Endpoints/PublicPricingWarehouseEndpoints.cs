@@ -35,9 +35,8 @@ public static class PublicPricingWarehouseEndpoints
         await using var connection = db.Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(cancellationToken);
 
-        // New QR links carry the Pricing POL id; legacy links may only carry the port code.
-        // Both paths are resolved against Config's ports catalog and CatalogItem.Value is the
-        // canonical locator used to find the WHS.
+        // New QR links carry the Pricing POL id; legacy links may only carry the port code/value.
+        // Resolve the canonical POL value first and then search every compatible WHS candidate.
         var resolvedPolValue = await ResolvePolValueAsync(
             connection,
             polId,
@@ -46,9 +45,6 @@ public static class PublicPricingWarehouseEndpoints
 
         if (string.IsNullOrWhiteSpace(resolvedPolValue)) return Results.NotFound();
 
-        // Port values normally include city + country (for example "Qingdao, China"), while
-        // legacy WHS records can be stored simply as "Qingdao" / "WHS_QINGDAO". Keep the
-        // full value as the primary key and use the city only as a compatibility fallback.
         var resolvedPolCity = resolvedPolValue
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault() ?? resolvedPolValue;
@@ -119,22 +115,50 @@ public static class PublicPricingWarehouseEndpoints
                     ELSE 8
                 END,
                 item.sort_order,
-                item.name
-            LIMIT 1;
+                item.name;
             """;
         Add(command, "pol_value", resolvedPolValue);
         Add(command, "pol_city", resolvedPolCity);
         Add(command, "pol_code", normalizedPolCode);
         Add(command, "pol_id", polIdText);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) return Results.NotFound();
+        var candidates = new List<WarehouseCandidate>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            var polOrder = 0;
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                candidates.Add(new WarehouseCandidate(
+                    reader.GetGuid(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.IsDBNull(3) ? "{}" : reader.GetString(3),
+                    polOrder++));
+            }
+        }
 
-        var id = reader.GetGuid(0);
-        var name = reader.GetString(1);
-        var code = reader.GetString(2);
-        var metadataJson = reader.IsDBNull(3) ? "{}" : reader.GetString(3);
-        using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(metadataJson) ? "{}" : metadataJson);
+        if (candidates.Count == 0) return Results.NotFound();
+
+        // The URL context is part of WHS resolution, not only contact resolution.
+        // Example: pol=Qingdao, China + shipmentMode=Fcl +
+        // route=Qingdao, China - Puerto Caldera, Costa Rica.
+        // Explicit WHS rules win; existing contactDirectory rules are also considered so
+        // current catalog data does not need to be duplicated at the WHS root.
+        var rankedCandidates = candidates
+            .Select(candidate => new
+            {
+                Candidate = candidate,
+                Score = ScoreWarehouse(candidate.MetadataJson, shipmentMode, route),
+            })
+            .Where(item => item.Score >= 0)
+            .OrderByDescending(item => item.Score)
+            .ThenBy(item => item.Candidate.PolOrder)
+            .ToArray();
+
+        if (rankedCandidates.Length == 0) return Results.NotFound();
+
+        var selected = rankedCandidates[0].Candidate;
+        using var document = ParseMetadata(selected.MetadataJson);
         var root = document.RootElement;
 
         var contacts = ReadContacts(root, shipmentMode, route);
@@ -142,13 +166,15 @@ public static class PublicPricingWarehouseEndpoints
 
         return Results.Ok(new
         {
-            id,
-            name,
-            code,
+            id = selected.Id,
+            name = selected.Name,
+            code = selected.Code,
             polId,
             polValue = resolvedPolValue,
             polCity = resolvedPolCity,
             polCode = normalizedPolCode,
+            shipmentMode = string.IsNullOrWhiteSpace(shipmentMode) ? null : shipmentMode.Trim(),
+            route = string.IsNullOrWhiteSpace(route) ? null : route.Trim(),
             address = ReadString(root, "address") ?? ReadString(root, "fullAddress") ?? string.Empty,
             city = ReadString(root, "city") ?? string.Empty,
             country = ReadString(root, "country") ?? string.Empty,
@@ -189,8 +215,6 @@ public static class PublicPricingWarehouseEndpoints
 
         if (string.IsNullOrWhiteSpace(fallback)) return fallback;
 
-        // Backwards compatibility for PDFs generated before polId/polValue were added to the QR.
-        // If the locator is CNTAO/CNSHA/etc., resolve that CODE to the catalog item's VALUE first.
         await using var byLocator = connection.CreateCommand();
         byLocator.CommandText = """
             SELECT COALESCE(NULLIF(BTRIM(item.value), ''), NULLIF(BTRIM(item.name), ''), item.code)
@@ -217,7 +241,97 @@ public static class PublicPricingWarehouseEndpoints
         return string.IsNullOrWhiteSpace(locatorValue) ? fallback : locatorValue.Trim();
     }
 
+    private static int ScoreWarehouse(string metadataJson, string? shipmentMode, string? route)
+    {
+        using var document = ParseMetadata(metadataJson);
+        var root = document.RootElement;
+        var requestedShipmentMode = Normalize(shipmentMode);
+        var requestedRoute = Normalize(route);
+
+        var configuredShipmentModes = ReadRuleValues(
+            root,
+            ["shipmentModes", "modalities"],
+            ["shipmentMode", "modality"]);
+        var configuredRoutes = ReadRuleValues(root, ["routes"], ["route"]);
+
+        var hasShipmentRules = configuredShipmentModes.Length > 0;
+        var hasRouteRules = configuredRoutes.Length > 0;
+        var shipmentMatch = !string.IsNullOrWhiteSpace(requestedShipmentMode)
+            && configuredShipmentModes.Any(value => Normalize(value) == requestedShipmentMode);
+        var routeMatch = !string.IsNullOrWhiteSpace(requestedRoute)
+            && configuredRoutes.Any(value => RouteMatches(value, requestedRoute));
+
+        if (!string.IsNullOrWhiteSpace(requestedShipmentMode) && hasShipmentRules && !shipmentMatch)
+            return -1;
+        if (!string.IsNullOrWhiteSpace(requestedRoute) && hasRouteRules && !routeMatch)
+            return -1;
+
+        var contacts = ReadAllContacts(root);
+        var hasContactRules = contacts.Any(contact => contact.Routes.Length > 0 || contact.ShipmentModes.Length > 0);
+        var hasGenericContact = contacts.Any(contact => contact.Routes.Length == 0 && contact.ShipmentModes.Length == 0);
+        var bestContactScore = contacts.Count == 0
+            ? 0
+            : contacts.Max(contact => ScoreContact(contact, requestedShipmentMode, requestedRoute));
+
+        // When a WHS has no root rules but all of its contacts are constrained to another
+        // route/mode, it is not a compatible candidate for this URL.
+        if (!hasShipmentRules
+            && !hasRouteRules
+            && hasContactRules
+            && !hasGenericContact
+            && bestContactScore == 0
+            && (!string.IsNullOrWhiteSpace(requestedShipmentMode) || !string.IsNullOrWhiteSpace(requestedRoute)))
+        {
+            return -1;
+        }
+
+        var score = 0;
+        if (routeMatch) score += 400;
+        else if (string.IsNullOrWhiteSpace(requestedRoute) || !hasRouteRules) score += 20;
+
+        if (shipmentMatch) score += 200;
+        else if (string.IsNullOrWhiteSpace(requestedShipmentMode) || !hasShipmentRules) score += 10;
+
+        score += bestContactScore;
+        return score;
+    }
+
     private static PublicContact[] ReadContacts(JsonElement root, string? shipmentMode, string? route)
+    {
+        var contacts = ReadAllContacts(root);
+        if (contacts.Count == 0) return [];
+
+        var requestedShipmentMode = Normalize(shipmentMode);
+        var requestedRoute = Normalize(route);
+        if (string.IsNullOrWhiteSpace(requestedShipmentMode) && string.IsNullOrWhiteSpace(requestedRoute))
+            return contacts.OrderByDescending(x => x.IsPrimary).ToArray();
+
+        var ranked = contacts
+            .Select(contact => new
+            {
+                Contact = contact,
+                Score = ScoreContact(contact, requestedShipmentMode, requestedRoute),
+            })
+            .Where(item => item.Score > 0)
+            .ToArray();
+
+        if (ranked.Length == 0)
+        {
+            return contacts
+                .Where(contact => contact.Routes.Length == 0 && contact.ShipmentModes.Length == 0)
+                .OrderByDescending(contact => contact.IsPrimary)
+                .ToArray();
+        }
+
+        var maxScore = ranked.Max(item => item.Score);
+        return ranked
+            .Where(item => item.Score == maxScore)
+            .Select(item => item.Contact)
+            .OrderByDescending(item => item.IsPrimary)
+            .ToArray();
+    }
+
+    private static List<PublicContact> ReadAllContacts(JsonElement root)
     {
         var contacts = new List<PublicContact>();
         if (root.TryGetProperty("contactDirectory", out var directory) && directory.ValueKind == JsonValueKind.Array)
@@ -240,7 +354,9 @@ public static class PublicPricingWarehouseEndpoints
             var legacyName = ReadString(root, "contacts") ?? ReadString(root, "contact");
             var legacyEmail = ReadString(root, "email");
             var legacyPhone = ReadString(root, "phone");
-            if (!string.IsNullOrWhiteSpace(legacyName) || !string.IsNullOrWhiteSpace(legacyEmail) || !string.IsNullOrWhiteSpace(legacyPhone))
+            if (!string.IsNullOrWhiteSpace(legacyName)
+                || !string.IsNullOrWhiteSpace(legacyEmail)
+                || !string.IsNullOrWhiteSpace(legacyPhone))
             {
                 contacts.Add(new PublicContact(
                     legacyName ?? string.Empty,
@@ -254,48 +370,91 @@ public static class PublicPricingWarehouseEndpoints
             }
         }
 
-        if (contacts.Count == 0) return [];
+        return contacts;
+    }
 
-        var requestedShipmentMode = Normalize(shipmentMode);
-        var requestedRoute = Normalize(route);
-        if (string.IsNullOrWhiteSpace(requestedShipmentMode) && string.IsNullOrWhiteSpace(requestedRoute))
-            return contacts.OrderByDescending(x => x.IsPrimary).ToArray();
+    private static int ScoreContact(PublicContact contact, string requestedShipmentMode, string requestedRoute)
+    {
+        var hasRouteRules = contact.Routes.Length > 0;
+        var shipmentRules = contact.ShipmentModes.Length > 0 ? contact.ShipmentModes : contact.Modalities;
+        var hasShipmentRules = shipmentRules.Length > 0;
+        var routeMatch = !string.IsNullOrWhiteSpace(requestedRoute)
+            && contact.Routes.Any(value => RouteMatches(value, requestedRoute));
+        var shipmentMatch = !string.IsNullOrWhiteSpace(requestedShipmentMode)
+            && shipmentRules.Any(value => Normalize(value) == requestedShipmentMode);
 
-        int Score(PublicContact contact)
-        {
-            var hasRouteRules = contact.Routes.Length > 0;
-            var hasShipmentRules = contact.ShipmentModes.Length > 0;
-            var routeMatch = !string.IsNullOrWhiteSpace(requestedRoute)
-                && contact.Routes.Any(value => RouteMatches(value, requestedRoute));
-            var shipmentMatch = !string.IsNullOrWhiteSpace(requestedShipmentMode)
-                && contact.ShipmentModes.Any(value => Normalize(value) == requestedShipmentMode);
-
-            if (routeMatch && shipmentMatch) return 40;
-            if (routeMatch && !hasShipmentRules) return 30;
-            if (shipmentMatch && !hasRouteRules) return 20;
-            if (!hasRouteRules && !hasShipmentRules) return 10;
-            return 0;
-        }
-
-        var ranked = contacts
-            .Select(contact => new { Contact = contact, Score = Score(contact) })
-            .Where(item => item.Score > 0)
-            .ToArray();
-
-        if (ranked.Length == 0) return contacts.OrderByDescending(x => x.IsPrimary).ToArray();
-        var maxScore = ranked.Max(item => item.Score);
-        return ranked
-            .Where(item => item.Score == maxScore)
-            .Select(item => item.Contact)
-            .OrderByDescending(item => item.IsPrimary)
-            .ToArray();
+        if (routeMatch && shipmentMatch) return 40;
+        if (routeMatch && !hasShipmentRules) return 30;
+        if (shipmentMatch && !hasRouteRules) return 20;
+        if (!hasRouteRules && !hasShipmentRules) return 10;
+        return 0;
     }
 
     private static bool RouteMatches(string configured, string requested)
     {
-        var left = Normalize(configured).Replace("→", "-").Replace("_", "-").Replace(" ", string.Empty);
-        var right = Normalize(requested).Replace("→", "-").Replace("_", "-").Replace(" ", string.Empty);
-        return left == right || right.Contains(left, StringComparison.OrdinalIgnoreCase) || left.Contains(right, StringComparison.OrdinalIgnoreCase);
+        var leftParts = SplitRoute(configured);
+        var rightParts = SplitRoute(requested);
+
+        if (leftParts.Length == 2 && rightParts.Length == 2)
+        {
+            return EndpointMatches(leftParts[0], rightParts[0])
+                && EndpointMatches(leftParts[1], rightParts[1]);
+        }
+
+        var left = NormalizeRouteEndpoint(configured);
+        var right = NormalizeRouteEndpoint(requested);
+        return left == right
+            || right.Contains(left, StringComparison.OrdinalIgnoreCase)
+            || left.Contains(right, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string[] SplitRoute(string value)
+    {
+        var normalized = Normalize(value)
+            .Replace("->", "-")
+            .Replace("→", "-")
+            .Replace("–", "-")
+            .Replace("—", "-")
+            .Replace(">", "-")
+            .Replace("_", "-");
+
+        var parts = normalized.Split('-', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2) return [];
+        return [NormalizeRouteEndpoint(parts[0]), NormalizeRouteEndpoint(parts[1])];
+    }
+
+    private static bool EndpointMatches(string configured, string requested)
+    {
+        if (string.IsNullOrWhiteSpace(configured) || string.IsNullOrWhiteSpace(requested)) return false;
+        return configured == requested
+            || configured.Contains(requested, StringComparison.OrdinalIgnoreCase)
+            || requested.Contains(configured, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeRouteEndpoint(string value)
+    {
+        return new string(Normalize(value).Where(char.IsLetterOrDigit).ToArray());
+    }
+
+    private static string[] ReadRuleValues(
+        JsonElement root,
+        IReadOnlyCollection<string> arrayProperties,
+        IReadOnlyCollection<string> scalarProperties)
+    {
+        var values = new List<string>();
+        foreach (var property in arrayProperties)
+            values.AddRange(ReadStringArray(root, property));
+
+        foreach (var property in scalarProperties)
+        {
+            var value = ReadString(root, property);
+            if (!string.IsNullOrWhiteSpace(value)) values.Add(value);
+        }
+
+        return values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static object[] ReadPhotos(JsonElement root)
@@ -364,6 +523,18 @@ public static class PublicPricingWarehouseEndpoints
         return bool.TryParse(value.ToString(), out var parsed) ? parsed : fallback;
     }
 
+    private static JsonDocument ParseMetadata(string? metadataJson)
+    {
+        try
+        {
+            return JsonDocument.Parse(string.IsNullOrWhiteSpace(metadataJson) ? "{}" : metadataJson);
+        }
+        catch (JsonException)
+        {
+            return JsonDocument.Parse("{}");
+        }
+    }
+
     private static string Normalize(string? value) => (value ?? string.Empty).Trim().ToUpperInvariant();
 
     private static void Add(DbCommand command, string name, object? value)
@@ -373,6 +544,13 @@ public static class PublicPricingWarehouseEndpoints
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }
+
+    private sealed record WarehouseCandidate(
+        Guid Id,
+        string Name,
+        string Code,
+        string MetadataJson,
+        int PolOrder);
 
     private sealed record PublicContact(
         string Name,
