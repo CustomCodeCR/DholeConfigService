@@ -19,6 +19,8 @@ public static class PublicPricingWarehouseEndpoints
 
     private static async Task<IResult> GetByPolAsync(
         string polCode,
+        string? shipmentMode,
+        string? route,
         ServiceDbContext db,
         CancellationToken cancellationToken)
     {
@@ -62,7 +64,7 @@ public static class PublicPricingWarehouseEndpoints
         using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(metadataJson) ? "{}" : metadataJson);
         var root = document.RootElement;
 
-        var contacts = ReadContacts(root);
+        var contacts = ReadContacts(root, shipmentMode, route);
         var photos = ReadPhotos(root);
 
         return Results.Ok(new
@@ -82,33 +84,85 @@ public static class PublicPricingWarehouseEndpoints
         });
     }
 
-    private static object[] ReadContacts(JsonElement root)
+    private static PublicContact[] ReadContacts(JsonElement root, string? shipmentMode, string? route)
     {
+        var contacts = new List<PublicContact>();
         if (root.TryGetProperty("contactDirectory", out var directory) && directory.ValueKind == JsonValueKind.Array)
         {
-            return directory.EnumerateArray()
+            contacts.AddRange(directory.EnumerateArray()
                 .Where(item => item.ValueKind == JsonValueKind.Object && ReadBool(item, "isActive", true))
-                .Select(item => (object)new
-                {
-                    name = ReadString(item, "name") ?? string.Empty,
-                    phone = ReadString(item, "phone") ?? string.Empty,
-                    email = ReadString(item, "email") ?? string.Empty,
-                    role = ReadString(item, "role") ?? string.Empty,
-                    isPrimary = ReadBool(item, "isPrimary", false),
-                    modalities = ReadStringArray(item, "modalities"),
-                    shipmentModes = ReadStringArray(item, "shipmentModes"),
-                    routes = ReadStringArray(item, "routes")
-                })
-                .ToArray();
+                .Select(item => new PublicContact(
+                    ReadString(item, "name") ?? string.Empty,
+                    ReadString(item, "phone") ?? string.Empty,
+                    ReadString(item, "email") ?? string.Empty,
+                    ReadString(item, "role") ?? string.Empty,
+                    ReadBool(item, "isPrimary", false),
+                    ReadStringArray(item, "modalities"),
+                    ReadStringArray(item, "shipmentModes"),
+                    ReadStringArray(item, "routes"))));
         }
 
-        var legacyName = ReadString(root, "contacts") ?? ReadString(root, "contact");
-        var legacyEmail = ReadString(root, "email");
-        var legacyPhone = ReadString(root, "phone");
-        if (string.IsNullOrWhiteSpace(legacyName) && string.IsNullOrWhiteSpace(legacyEmail) && string.IsNullOrWhiteSpace(legacyPhone))
-            return [];
+        if (contacts.Count == 0)
+        {
+            var legacyName = ReadString(root, "contacts") ?? ReadString(root, "contact");
+            var legacyEmail = ReadString(root, "email");
+            var legacyPhone = ReadString(root, "phone");
+            if (!string.IsNullOrWhiteSpace(legacyName) || !string.IsNullOrWhiteSpace(legacyEmail) || !string.IsNullOrWhiteSpace(legacyPhone))
+            {
+                contacts.Add(new PublicContact(
+                    legacyName ?? string.Empty,
+                    legacyPhone ?? string.Empty,
+                    legacyEmail ?? string.Empty,
+                    string.Empty,
+                    true,
+                    [],
+                    [],
+                    []));
+            }
+        }
 
-        return [new { name = legacyName ?? string.Empty, phone = legacyPhone ?? string.Empty, email = legacyEmail ?? string.Empty, role = string.Empty, isPrimary = true, modalities = Array.Empty<string>(), shipmentModes = Array.Empty<string>(), routes = Array.Empty<string>() }];
+        if (contacts.Count == 0) return [];
+
+        var requestedShipmentMode = Normalize(shipmentMode);
+        var requestedRoute = Normalize(route);
+        if (string.IsNullOrWhiteSpace(requestedShipmentMode) && string.IsNullOrWhiteSpace(requestedRoute))
+            return contacts.OrderByDescending(x => x.IsPrimary).ToArray();
+
+        int Score(PublicContact contact)
+        {
+            var hasRouteRules = contact.Routes.Length > 0;
+            var hasShipmentRules = contact.ShipmentModes.Length > 0;
+            var routeMatch = !string.IsNullOrWhiteSpace(requestedRoute)
+                && contact.Routes.Any(value => RouteMatches(value, requestedRoute));
+            var shipmentMatch = !string.IsNullOrWhiteSpace(requestedShipmentMode)
+                && contact.ShipmentModes.Any(value => Normalize(value) == requestedShipmentMode);
+
+            if (routeMatch && shipmentMatch) return 40;
+            if (routeMatch && !hasShipmentRules) return 30;
+            if (shipmentMatch && !hasRouteRules) return 20;
+            if (!hasRouteRules && !hasShipmentRules) return 10;
+            return 0;
+        }
+
+        var ranked = contacts
+            .Select(contact => new { Contact = contact, Score = Score(contact) })
+            .Where(item => item.Score > 0)
+            .ToArray();
+
+        if (ranked.Length == 0) return contacts.OrderByDescending(x => x.IsPrimary).ToArray();
+        var maxScore = ranked.Max(item => item.Score);
+        return ranked
+            .Where(item => item.Score == maxScore)
+            .Select(item => item.Contact)
+            .OrderByDescending(item => item.IsPrimary)
+            .ToArray();
+    }
+
+    private static bool RouteMatches(string configured, string requested)
+    {
+        var left = Normalize(configured).Replace("→", "-").Replace("_", "-").Replace(" ", string.Empty);
+        var right = Normalize(requested).Replace("→", "-").Replace("_", "-").Replace(" ", string.Empty);
+        return left == right || right.Contains(left, StringComparison.OrdinalIgnoreCase) || left.Contains(right, StringComparison.OrdinalIgnoreCase);
     }
 
     private static object[] ReadPhotos(JsonElement root)
@@ -177,6 +231,8 @@ public static class PublicPricingWarehouseEndpoints
         return bool.TryParse(value.ToString(), out var parsed) ? parsed : fallback;
     }
 
+    private static string Normalize(string? value) => (value ?? string.Empty).Trim().ToUpperInvariant();
+
     private static void Add(DbCommand command, string name, object? value)
     {
         var parameter = command.CreateParameter();
@@ -184,4 +240,14 @@ public static class PublicPricingWarehouseEndpoints
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }
+
+    private sealed record PublicContact(
+        string Name,
+        string Phone,
+        string Email,
+        string Role,
+        bool IsPrimary,
+        string[] Modalities,
+        string[] ShipmentModes,
+        string[] Routes);
 }
