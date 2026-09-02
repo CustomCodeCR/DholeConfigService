@@ -46,6 +46,12 @@ public static class PublicPricingWarehouseEndpoints
 
         if (string.IsNullOrWhiteSpace(resolvedPolValue)) return Results.NotFound();
 
+        // Port values normally include city + country (for example "Qingdao, China"), while
+        // legacy WHS records can be stored simply as "Qingdao" / "WHS_QINGDAO". Keep the
+        // full value as the primary key and use the city only as a compatibility fallback.
+        var resolvedPolCity = resolvedPolValue
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault() ?? resolvedPolValue;
         var polIdText = polId?.ToString("D") ?? string.Empty;
 
         await using var command = connection.CreateCommand();
@@ -59,17 +65,36 @@ public static class PublicPricingWarehouseEndpoints
               AND item.is_active = TRUE
               AND (
                     UPPER(COALESCE(item.value, '')) = UPPER(@pol_value)
+                    OR UPPER(COALESCE(item.value, '')) = UPPER(@pol_city)
+                    OR UPPER(item.name) = UPPER(@pol_value)
+                    OR UPPER(item.name) = UPPER(@pol_city)
+                    OR UPPER(item.name) LIKE '%' || UPPER(@pol_city) || '%'
                     OR UPPER(item.code) = UPPER('WHS_' || @pol_value)
+                    OR UPPER(item.code) = UPPER('WHS_' || @pol_city)
+                    OR regexp_replace(UPPER(item.code), '[^A-Z0-9]+', '', 'g') =
+                       regexp_replace(UPPER('WHS_' || @pol_city), '[^A-Z0-9]+', '', 'g')
+                    OR UPPER(COALESCE(item.metadata_json->>'city', '')) = UPPER(@pol_city)
                     OR UPPER(COALESCE(item.metadata_json->>'polValue', '')) = UPPER(@pol_value)
+                    OR UPPER(COALESCE(item.metadata_json->>'polValue', '')) = UPPER(@pol_city)
+                    OR UPPER(COALESCE(item.metadata_json->>'polName', '')) = UPPER(@pol_value)
+                    OR UPPER(COALESCE(item.metadata_json->>'polName', '')) = UPPER(@pol_city)
                     OR EXISTS (
                         SELECT 1
                         FROM jsonb_array_elements_text(COALESCE(item.metadata_json->'polValues', '[]'::jsonb)) pol(value)
                         WHERE UPPER(pol.value) = UPPER(@pol_value)
+                           OR UPPER(pol.value) = UPPER(@pol_city)
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements_text(COALESCE(item.metadata_json->'polNames', '[]'::jsonb)) pol(value)
+                        WHERE UPPER(pol.value) = UPPER(@pol_value)
+                           OR UPPER(pol.value) = UPPER(@pol_city)
                     )
                     OR EXISTS (
                         SELECT 1
                         FROM jsonb_array_elements_text(COALESCE(item.metadata_json->'polCodes', '[]'::jsonb)) pol(value)
                         WHERE UPPER(pol.value) = UPPER(@pol_value)
+                           OR UPPER(pol.value) = UPPER(@pol_city)
                            OR (@pol_code <> '' AND UPPER(pol.value) = UPPER(@pol_code))
                     )
                     OR (@pol_code <> '' AND UPPER(item.code) = UPPER('WHS_' || @pol_code))
@@ -83,18 +108,22 @@ public static class PublicPricingWarehouseEndpoints
               )
             ORDER BY
                 CASE
-                    WHEN UPPER(COALESCE(item.value, '')) = UPPER(@pol_value) THEN 0
-                    WHEN @pol_id <> '' AND UPPER(COALESCE(item.metadata_json->>'polId', '')) = UPPER(@pol_id) THEN 1
+                    WHEN @pol_id <> '' AND UPPER(COALESCE(item.metadata_json->>'polId', '')) = UPPER(@pol_id) THEN 0
+                    WHEN UPPER(COALESCE(item.value, '')) = UPPER(@pol_value) THEN 1
                     WHEN UPPER(COALESCE(item.metadata_json->>'polValue', '')) = UPPER(@pol_value) THEN 2
-                    WHEN UPPER(item.code) = UPPER('WHS_' || @pol_value) THEN 3
-                    WHEN @pol_code <> '' AND UPPER(item.code) = UPPER('WHS_' || @pol_code) THEN 4
-                    ELSE 5
+                    WHEN @pol_code <> '' AND UPPER(COALESCE(item.metadata_json->>'polCode', '')) = UPPER(@pol_code) THEN 3
+                    WHEN UPPER(COALESCE(item.value, '')) = UPPER(@pol_city) THEN 4
+                    WHEN UPPER(COALESCE(item.metadata_json->>'city', '')) = UPPER(@pol_city) THEN 5
+                    WHEN UPPER(item.name) = UPPER(@pol_city) THEN 6
+                    WHEN UPPER(item.code) = UPPER('WHS_' || @pol_city) THEN 7
+                    ELSE 8
                 END,
                 item.sort_order,
                 item.name
             LIMIT 1;
             """;
         Add(command, "pol_value", resolvedPolValue);
+        Add(command, "pol_city", resolvedPolCity);
         Add(command, "pol_code", normalizedPolCode);
         Add(command, "pol_id", polIdText);
 
@@ -118,6 +147,7 @@ public static class PublicPricingWarehouseEndpoints
             code,
             polId,
             polValue = resolvedPolValue,
+            polCity = resolvedPolCity,
             polCode = normalizedPolCode,
             address = ReadString(root, "address") ?? ReadString(root, "fullAddress") ?? string.Empty,
             city = ReadString(root, "city") ?? string.Empty,
