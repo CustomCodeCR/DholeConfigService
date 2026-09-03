@@ -105,6 +105,7 @@ using (var scope = app.Services.CreateScope())
                  "pricing-clients",
                  "pricing-sales-executives",
                  "country-vat-rates",
+                 "agents",
                  "pol",
                  "poe",
              })
