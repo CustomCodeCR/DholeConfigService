@@ -23,10 +23,7 @@ public sealed class RestorePricingServicesAndLandRoutes : Migration
             ON CONFLICT DO NOTHING;
 
             UPDATE config."CatalogGroups"
-            SET is_active = TRUE,
-                is_deleted = FALSE,
-                updated_at_utc = NOW(),
-                updated_by = 'migration'
+            SET is_active = TRUE, is_deleted = FALSE, updated_at_utc = NOW(), updated_by = 'migration'
             WHERE slug IN ('pricing-services', 'land-pol', 'land-poe');
 
             WITH desired(id, code, slug, name, description, value, metadata_json, sort_order) AS (
@@ -47,26 +44,19 @@ public sealed class RestorePricingServicesAndLandRoutes : Migration
             INSERT INTO config."CatalogItems"
                 (id, catalog_group_id, code, slug, name, description, value, metadata_json, sort_order, is_system, is_active, created_at_utc, created_by, is_deleted)
             SELECT d.id, g.id, d.code, d.slug, d.name, d.description, d.value, d.metadata_json::jsonb, d.sort_order, TRUE, TRUE, NOW(), 'migration', FALSE
-            FROM config."CatalogGroups" g
-            CROSS JOIN desired d
-            WHERE g.slug = 'pricing-services'
-              AND g.is_deleted = FALSE
+            FROM config."CatalogGroups" g CROSS JOIN desired d
+            WHERE g.slug = 'pricing-services' AND g.is_deleted = FALSE
               AND NOT EXISTS (
                   SELECT 1 FROM config."CatalogItems" i
-                  WHERE i.catalog_group_id = g.id
-                    AND i.is_deleted = FALSE
+                  WHERE i.catalog_group_id = g.id AND i.is_deleted = FALSE
                     AND (UPPER(i.code) = UPPER(d.code) OR LOWER(i.slug) = LOWER(d.slug))
               )
             ON CONFLICT DO NOTHING;
 
             UPDATE config."CatalogItems" i
-            SET is_active = TRUE,
-                is_deleted = FALSE,
-                updated_at_utc = NOW(),
-                updated_by = 'migration'
+            SET is_active = TRUE, is_deleted = FALSE, updated_at_utc = NOW(), updated_by = 'migration'
             FROM config."CatalogGroups" g
-            WHERE i.catalog_group_id = g.id
-              AND g.slug = 'pricing-services'
+            WHERE i.catalog_group_id = g.id AND g.slug = 'pricing-services'
               AND i.code IN ('INT_TRANSPORT','CUSTOMS_CR','CUSTOMS_FOREIGN','STORAGE','CARGO_INSURANCE','INVENTORY_CONTROL','PICKING','RECEPTION','PACKING','EXONERATION','DELIVERY','PICKUP');
 
             WITH desired(id, code, slug, name, sort_order, country_code) AS (
@@ -87,18 +77,11 @@ public sealed class RestorePricingServicesAndLandRoutes : Migration
             INSERT INTO config."CatalogItems"
                 (id, catalog_group_id, code, slug, name, description, value, metadata_json, sort_order, is_system, is_active, created_at_utc, created_by, is_deleted)
             SELECT
-                CASE WHEN g.slug = 'land-pol' THEN d.id ELSE d.id + '00000000-0000-0000-0000-000000000100'::uuid END,
-                g.id,
-                d.code,
-                d.slug,
-                d.name,
-                'Ubicación terrestre para Pricing.',
-                d.name,
+                CASE WHEN g.slug = 'land-pol' THEN d.id ELSE replace(d.id::text, 'c2600000', 'c2610000')::uuid END,
+                g.id, d.code, d.slug, d.name, 'Ubicación terrestre para Pricing.', d.name,
                 jsonb_build_object('modality','Land','countryCode',d.country_code,'routeRole',CASE WHEN g.slug='land-pol' THEN 'POL' ELSE 'POE' END),
-                d.sort_order,
-                TRUE, TRUE, NOW(), 'migration', FALSE
-            FROM target_groups g
-            CROSS JOIN desired d
+                d.sort_order, TRUE, TRUE, NOW(), 'migration', FALSE
+            FROM target_groups g CROSS JOIN desired d
             WHERE NOT EXISTS (
                 SELECT 1 FROM config."CatalogItems" i
                 WHERE i.catalog_group_id = g.id AND i.is_deleted = FALSE
@@ -106,26 +89,18 @@ public sealed class RestorePricingServicesAndLandRoutes : Migration
             )
             ON CONFLICT DO NOTHING;
 
-            -- Selector comercial que permite buscar todos los POE panameños en Pantalla 5.
             INSERT INTO config."CatalogItems"
                 (id, catalog_group_id, code, slug, name, description, value, metadata_json, sort_order, is_system, is_active, created_at_utc, created_by, is_deleted)
-            SELECT
-                'c2700000-0000-4000-8000-000000000001'::uuid,
-                g.id,
-                'MULTIMODAL_VIA_PANAMA',
-                'multimodal-via-panama',
-                'Multimodal Via Panamá',
-                'Busca tarifas FCL cuyo POE esté en Panamá.',
-                'Multimodal Via Panamá',
+            SELECT 'c2700000-0000-4000-8000-000000000001'::uuid, g.id,
+                'MULTIMODAL_VIA_PANAMA', 'multimodal-via-panama', 'Multimodal Via Panamá',
+                'Busca tarifas FCL cuyo POE esté en Panamá.', 'Multimodal Via Panamá',
                 '{"pricingWorkflow":true,"multimodalViaPanama":true,"countryCode":"PA"}'::jsonb,
-                5,
-                TRUE, TRUE, NOW(), 'migration', FALSE
+                5, TRUE, TRUE, NOW(), 'migration', FALSE
             FROM config."CatalogGroups" g
             WHERE g.slug = 'poe' AND g.is_deleted = FALSE
               AND NOT EXISTS (
                   SELECT 1 FROM config."CatalogItems" i
-                  WHERE i.catalog_group_id = g.id AND i.is_deleted = FALSE
-                    AND i.code = 'MULTIMODAL_VIA_PANAMA'
+                  WHERE i.catalog_group_id = g.id AND i.is_deleted = FALSE AND i.code = 'MULTIMODAL_VIA_PANAMA'
               )
             ON CONFLICT DO NOTHING;
             """
@@ -137,8 +112,7 @@ public sealed class RestorePricingServicesAndLandRoutes : Migration
         migrationBuilder.Sql(
             """
             DELETE FROM config."CatalogItems" WHERE code = 'MULTIMODAL_VIA_PANAMA';
-            DELETE FROM config."CatalogItems" i
-            USING config."CatalogGroups" g
+            DELETE FROM config."CatalogItems" i USING config."CatalogGroups" g
             WHERE i.catalog_group_id = g.id AND g.slug IN ('land-pol','land-poe');
             DELETE FROM config."CatalogGroups" WHERE slug IN ('land-pol','land-poe');
             """
