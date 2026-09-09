@@ -108,6 +108,9 @@ using (var scope = app.Services.CreateScope())
                  "agents",
                  "pol",
                  "poe",
+                 "land-equipment-types",
+                 "land-equipment-sizes",
+                 "land-equipment-kinds",
              })
     {
         await cache.RemoveCatalogGroupCacheAsync(slug);
