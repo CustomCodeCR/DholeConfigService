@@ -20,20 +20,17 @@ public sealed class GetCatalogItemsForSelectQueryHandler(
             && !string.IsNullOrWhiteSpace(query.CatalogGroupSlug)
             && string.IsNullOrWhiteSpace(query.Search);
 
+        IReadOnlyCollection<CatalogItemSelectDto>? items = null;
+
         if (canUseCache)
         {
-            var cached = await cache.GetCatalogItemsSelectByGroupSlugAsync(
+            items = await cache.GetCatalogItemsSelectByGroupSlugAsync(
                 query.CatalogGroupSlug!,
                 cancellationToken
             );
-
-            if (cached is not null)
-            {
-                return cached;
-            }
         }
 
-        var items = await catalogItems.GetForSelectAsync(
+        items ??= await catalogItems.GetForSelectAsync(
             query.CatalogGroupId,
             query.CatalogGroupSlug,
             query.Search,
@@ -41,8 +38,8 @@ public sealed class GetCatalogItemsForSelectQueryHandler(
         );
 
         // Value is the only business/display value exposed by Config selects.
-        // Code and Slug remain dedicated technical fields and are never used as
-        // fallback display values.
+        // Always rehydrate it from the canonical catalog row, including cache hits,
+        // so stale cache entries can never expose Code or Slug as the visible value.
         if (!string.IsNullOrWhiteSpace(query.CatalogGroupSlug) && items.Count > 0)
         {
             var canonicalItems = await catalogItems.GetActiveByGroupSlugAsync(
