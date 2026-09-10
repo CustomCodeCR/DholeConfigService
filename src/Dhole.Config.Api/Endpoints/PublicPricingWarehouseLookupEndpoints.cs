@@ -23,6 +23,8 @@ public static class PublicPricingWarehouseLookupEndpoints
         string pol,
         string? shipmentMode,
         string? route,
+        string? agentCode,
+        string? agent,
         ServiceDbContext db,
         CancellationToken cancellationToken)
     {
@@ -92,8 +94,15 @@ public static class PublicPricingWarehouseLookupEndpoints
 
         using var document = ParseMetadata(selected.MetadataJson);
         var root = document.RootElement;
-        var contacts = ReadContacts(root, shipmentMode, route);
-        var photos = ReadPhotos(root);
+        var hasAgentContext = !string.IsNullOrWhiteSpace(agentCode) || !string.IsNullOrWhiteSpace(agent);
+        var gcfOnly = Normalize(shipmentMode) == "FCL"
+            && IsChinaWarehouse(root, requestedPol)
+            && hasAgentContext
+            && !IsRsLogistics(agentCode, agent);
+        var contacts = gcfOnly
+            ? new[] { CreateGcfContact() }
+            : ReadContacts(root, shipmentMode, route);
+        var photos = gcfOnly ? Array.Empty<object>() : ReadPhotos(root);
 
         return Results.Ok(new
         {
@@ -106,18 +115,54 @@ public static class PublicPricingWarehouseLookupEndpoints
             polCode = ReadBestPolCode(root, selected.Code, requestedCity),
             shipmentMode = string.IsNullOrWhiteSpace(shipmentMode) ? null : shipmentMode.Trim(),
             route = string.IsNullOrWhiteSpace(route) ? null : route.Trim(),
-            address = ReadString(root, "address") ?? ReadString(root, "fullAddress") ?? string.Empty,
-            city = ReadString(root, "city") ?? requestedCity,
-            country = ReadString(root, "country") ?? ReadString(root, "countryCode") ?? string.Empty,
-            schedule = ReadString(root, "schedule") ?? string.Empty,
-            latitude = ReadDecimal(root, "latitude"),
-            longitude = ReadDecimal(root, "longitude"),
+            agentCode = string.IsNullOrWhiteSpace(agentCode) ? null : agentCode.Trim(),
+            agent = string.IsNullOrWhiteSpace(agent) ? null : agent.Trim(),
+            gcfOnly,
+            address = gcfOnly
+                ? string.Empty
+                : ReadString(root, "address") ?? ReadString(root, "fullAddress") ?? string.Empty,
+            city = gcfOnly ? string.Empty : ReadString(root, "city") ?? requestedCity,
+            country = gcfOnly
+                ? string.Empty
+                : ReadString(root, "country") ?? ReadString(root, "countryCode") ?? string.Empty,
+            schedule = gcfOnly ? string.Empty : ReadString(root, "schedule") ?? string.Empty,
+            latitude = gcfOnly ? (decimal?)null : ReadDecimal(root, "latitude"),
+            longitude = gcfOnly ? (decimal?)null : ReadDecimal(root, "longitude"),
             contacts,
             photos,
             sourceCatalog = WarehouseCatalogSlug,
             message = "Estos son los datos de Castro Fallas en origen."
         });
     }
+
+    private static bool IsChinaWarehouse(JsonElement root, string requestedPol)
+    {
+        if (Normalize(ReadString(root, "countryCode")) == "CN") return true;
+        if (Normalize(ReadString(root, "country")) == "CHINA") return true;
+        return Normalize(requestedPol).Contains("CHINA", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRsLogistics(string? agentCode, string? agentName)
+    {
+        foreach (var value in new[] { agentCode, agentName })
+        {
+            var compact = Compact(value);
+            if (compact == "RS" || compact.Contains("RSLOGISTICS", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static PublicContact CreateGcfContact() => new(
+        "Grupo Castro Fallas",
+        string.Empty,
+        "china@grupocastrofallas.com",
+        "Contacto GCF",
+        true,
+        [],
+        ["FCL"],
+        []);
 
     private static int ScorePol(WarehouseCandidate candidate, string requestedPol, string requestedCity)
     {
