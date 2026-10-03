@@ -18,12 +18,9 @@ public sealed class PolishAirAptDisplayNames : Migration
             -- POL/POE value stays concise: City, Country.
             UPDATE config."CatalogItems" i
             SET
-                name = CASE UPPER(i.metadata_json->>'iataCode')
-                    WHEN 'MIA' THEN 'Miami, Estados Unidos'
-                    WHEN 'SJO' THEN 'San José, Costa Rica'
-                    WHEN 'MAD' THEN 'Madrid, España'
-                    ELSE i.name
-                END,
+                -- Do not overwrite CatalogItems.name: that column is unique per catalog
+                -- and may already be used by an SD/CY location with the same city name.
+                -- Pricing renders CatalogItems.value, so only the visible value is shortened.
                 value = CASE UPPER(i.metadata_json->>'iataCode')
                     WHEN 'MIA' THEN 'Miami, Estados Unidos'
                     WHEN 'SJO' THEN 'San José, Costa Rica'
