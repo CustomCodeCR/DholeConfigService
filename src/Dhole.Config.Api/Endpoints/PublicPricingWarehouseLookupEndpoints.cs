@@ -265,12 +265,23 @@ public static class PublicPricingWarehouseLookupEndpoints
 
         if (ranked.Length == 0)
         {
-            return contacts
+            var generalContacts = contacts
                 .Where(contact => contact.Routes.Length == 0
                     && contact.ShipmentModes.Length == 0
                     && contact.Modalities.Length == 0)
                 .OrderByDescending(contact => contact.IsPrimary)
                 .ToArray();
+
+            if (generalContacts.Length > 0) return generalContacts;
+
+            // If no contact rule matches the shipment mode (for example, a WHS
+            // listed for FCL/LCL on an LTL quote), show the same warehouse's
+            // configured primary contact rather than leaving the page empty.
+            // Never resolve a contact from a different warehouse or country.
+            var primaryContact = contacts.FirstOrDefault(contact => contact.IsPrimary);
+            if (primaryContact is not null) return [primaryContact];
+
+            return contacts.Count == 1 ? [contacts[0]] : [];
         }
 
         var maxScore = ranked.Max(item => item.Score);
