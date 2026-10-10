@@ -868,7 +868,14 @@ public sealed class AddGlobalAirportsToPolAndPoe : Migration
                 ('ZAR', 'Zaria', 'NG', 'Nigeria', 'Zaria, Nigeria', 'Zaria Airport', 'DNZA', 'mid', 'FreeGeoDB', 11.13530, 7.68727),
                 ('ZLO', 'Manzanillo', 'MX', 'México', 'Manzanillo, México', 'Playa de Oro International Airport', 'MMZO', 'mid', 'FreeGeoDB', 19.14809, -104.56010),
                 ('ZNZ', 'Kiembi Samaki', 'TZ', 'Tanzania', 'Kiembi Samaki, Tanzania', 'Zanzibar Airport', 'HTZA', 'mid', 'FreeGeoDB', -6.21857, 39.22233),
-                ('ZRH', 'Zurich', 'CH', 'Suiza', 'Zurich, Suiza', 'Zurich International Airport', 'LSZH', 'major', 'FreeGeoDB', 47.45239, 8.56221)
+                ('ZRH', 'Zurich', 'CH', 'Suiza', 'Zurich, Suiza', 'Zurich International Airport', 'LSZH', 'major', 'FreeGeoDB', 47.45239, 8.56221),
+                ('LIO', 'Limón', 'CR', 'Costa Rica', 'Limón, Costa Rica', 'Limón International Airport', 'MRLM', 'curated', 'Dhole', NULL, NULL),
+                ('FON', 'La Fortuna', 'CR', 'Costa Rica', 'La Fortuna, Costa Rica', 'La Fortuna Arenal Airport', 'MRAN', 'curated', 'Dhole', NULL, NULL),
+                ('NOB', 'Nosara', 'CR', 'Costa Rica', 'Nosara, Costa Rica', 'Nosara Airport', 'MRNS', 'curated', 'Dhole', NULL, NULL),
+                ('PJM', 'Puerto Jiménez', 'CR', 'Costa Rica', 'Puerto Jiménez, Costa Rica', 'Puerto Jiménez Airport', 'MRPJ', 'curated', 'Dhole', NULL, NULL),
+                ('PBP', 'Punta Islita', 'CR', 'Costa Rica', 'Punta Islita, Costa Rica', 'Punta Islita Airport', 'MRIA', 'curated', 'Dhole', NULL, NULL),
+                ('PMZ', 'Palmar Sur', 'CR', 'Costa Rica', 'Palmar Sur, Costa Rica', 'Palmar Sur Airport', 'MRPM', 'curated', 'Dhole', NULL, NULL),
+                ('TNO', 'Tamarindo', 'CR', 'Costa Rica', 'Tamarindo, Costa Rica', 'Tamarindo Airport', 'MRTM', 'curated', 'Dhole', NULL, NULL)
             )
             INSERT INTO config."CatalogItems"
                 (id, catalog_group_id, code, slug, name, description, value,
