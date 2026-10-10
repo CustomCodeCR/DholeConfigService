@@ -2,7 +2,7 @@
 
 ## Alcance
 
-- Los catálogos existentes **pol** y **poe** contienen el **mismo conjunto** de 843 aeropuertos internacionales y regionales (incluidos MIA, MAD y SJO preexistentes).
+- Los catálogos existentes **pol** y **poe** contienen el **mismo conjunto** de 850 aeropuertos internacionales y regionales (incluidos MIA, MAD y SJO preexistentes).
 - Se usa `code = APT_<IATA>`, `terminalType=APT`, `transportMode=Air`, `routeRole=POL|POE`.
 - `name` muestra `Ciudad, País (IATA)` y `value` muestra `Ciudad, País`. El nombre de la instalación aeroportuaria queda exclusivamente en `metadata_json.airportName`.
 - Metadatos adicionales: códigos IATA/ICAO, país ISO, ciudad, coordenadas cuando están disponibles, categoría y origen.
