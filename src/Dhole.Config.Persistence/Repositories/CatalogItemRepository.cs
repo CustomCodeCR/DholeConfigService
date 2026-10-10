@@ -236,7 +236,15 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
         return await query
             .OrderBy(x => x.SortOrder)
             .ThenBy(x => x.Name)
-            .Take(50)
+            // Pricing loads the complete POL/POE catalogs once and searches locally.
+            // A 50-row cap makes newly seeded APT airports impossible to select.
+            .Take(
+                catalogGroupSlug is not null
+                    && (catalogGroupSlug.Equals("pol", StringComparison.OrdinalIgnoreCase)
+                        || catalogGroupSlug.Equals("poe", StringComparison.OrdinalIgnoreCase))
+                    ? 2500
+                    : 50
+            )
             .Select(x => new CatalogItemSelectDto(
                 x.Slug,
                 x.Name,
