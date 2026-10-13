@@ -15,6 +15,12 @@ public sealed class GetCatalogItemsByGroupSlugQueryHandler(
         CancellationToken cancellationToken = default
     )
     {
+        // WHS are also maintained through SQL seed migrations; always read the current directory.
+        if (string.Equals(query.CatalogGroupSlug, "pricing-warehouses", StringComparison.OrdinalIgnoreCase))
+        {
+            return await catalogItems.GetActiveByGroupSlugAsync(query.CatalogGroupSlug, cancellationToken);
+        }
+
         var cached = await cache.GetCatalogItemsByGroupSlugAsync(
             query.CatalogGroupSlug,
             cancellationToken
