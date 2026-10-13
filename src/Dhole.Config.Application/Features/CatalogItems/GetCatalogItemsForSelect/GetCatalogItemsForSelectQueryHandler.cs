@@ -18,7 +18,9 @@ public sealed class GetCatalogItemsForSelectQueryHandler(
         var canUseCache =
             query.CatalogGroupId is null
             && !string.IsNullOrWhiteSpace(query.CatalogGroupSlug)
-            && string.IsNullOrWhiteSpace(query.Search);
+            && string.IsNullOrWhiteSpace(query.Search)
+            // Direct SQL warehouse migrations do not invalidate Redis select snapshots.
+            && !string.Equals(query.CatalogGroupSlug, "pricing-warehouses", StringComparison.OrdinalIgnoreCase);
 
         IReadOnlyCollection<CatalogItemSelectDto>? items = null;
 
