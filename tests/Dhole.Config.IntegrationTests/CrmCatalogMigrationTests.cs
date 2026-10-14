@@ -27,8 +27,8 @@ public sealed class CrmCatalogMigrationTests
         foreach (var (slug, codes) in specs)
         {
             var actual = await (from item in db.CatalogItems.AsNoTracking()
-                join group in db.CatalogGroups.AsNoTracking() on item.CatalogGroupId equals group.Id
-                where group.Slug == slug && group.IsActive && item.IsActive
+                join catalogGroup in db.CatalogGroups.AsNoTracking() on item.CatalogGroupId equals catalogGroup.Id
+                where catalogGroup.Slug == slug && catalogGroup.IsActive && item.IsActive
                 select item.Code).ToListAsync();
             CollectionAssert.AreEquivalent(codes, actual.ToArray(), "Incorrect CRM catalog " + slug);
         }
