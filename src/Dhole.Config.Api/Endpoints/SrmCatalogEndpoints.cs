@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using CustomCodeFramework.Api.Responses;
 using CustomCodeFramework.Cqrs.Dispatching;
@@ -186,7 +187,7 @@ public static class SrmCatalogEndpoints
             {
                 if (!metadata.TryGetProperty("expiresAt", out var expiry) ||
                     expiry.ValueKind != JsonValueKind.String ||
-                    !DateOnly.TryParseExact(expiry.GetString(), "yyyy-MM-dd", out _))
+                    !DateOnly.TryParseExact(expiry.GetString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
                     return Results.BadRequest(new { code = "srm_invalid_expiry" });
             }
 
