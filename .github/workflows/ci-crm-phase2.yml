@@ -1,0 +1,31 @@
+name: Config CRM Phase 2 Migration CI
+on:
+  pull_request:
+    branches: [develop, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env: { POSTGRES_USER: config_test, POSTGRES_PASSWORD: config_ci_only, POSTGRES_DB: dhole_config }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U config_test" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      NuGetPackageSourceCredentials_github: Username=github-actions;Password=${{ secrets.GITHUB_TOKEN }};ValidAuthenticationTypes=Basic
+      CRM_CONFIG_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=dhole_config;Username=config_test;Password=config_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore
+        run: dotnet restore DholeConfigService.slnx --configfile NuGet.Config
+      - name: Build all projects and gRPC contracts
+        run: dotnet build DholeConfigService.slnx -c Release --no-restore --warnaserror
+      - name: Run tests and real PostgreSQL migrations
+        run: dotnet test DholeConfigService.slnx -c Release --no-build --logger trx
