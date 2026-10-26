@@ -85,6 +85,7 @@ app.MapGrpcService<ConfigCatalogGrpcService>();
 
 app.MapCatalogGroupEndpoints();
 app.MapCatalogItemEndpoints();
+app.MapSrmCatalogEndpoints();
 app.MapPublicPricingWarehouseEndpoints();
 app.MapPublicPricingWarehouseLookupEndpoints();
 
