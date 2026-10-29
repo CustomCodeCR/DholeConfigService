@@ -32,6 +32,13 @@ public static class SrmCatalogEndpoints
         route.MapGet("/suppliers", (IQueryDispatcher queries, CancellationToken ct) =>
             ReadAsync(Suppliers, queries, ct))
             .RequireScope("srm.supplier.read");
+        // Read-only discovery of legacy Pricing carrier/agent directories.
+        route.MapGet("/legacy-partners", LegacyPartnersAsync)
+            .RequireScope("srm.supplier.read");
+        // Non-destructive import with stable origin key; Pricing keeps its old code
+        // until a separate contract migration and reconciliation are completed.
+        route.MapPost("/legacy-partners/{source}/{legacyId:guid}/import", ImportLegacyAsync)
+            .RequireScope("srm.supplier.create");
         route.MapGet("/evaluations", (IQueryDispatcher queries, CancellationToken ct) =>
             ReadAsync(Evaluations, queries, ct))
             .RequireScope("srm.performance.read");
@@ -68,6 +75,81 @@ public static class SrmCatalogEndpoints
             .RequireScope("srm.supplier.update");
 
         return app;
+    }
+
+    private sealed record LegacyPartnerDto(
+        string SourceGroup, Guid Id, string Code, string Name, bool Imported);
+
+    private static Guid? LegacyLink(CatalogItemDto row)
+    {
+        if (string.IsNullOrWhiteSpace(row.MetadataJson)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(row.MetadataJson);
+            if (document.RootElement.TryGetProperty("legacyConfigId", out var node) &&
+                node.ValueKind == JsonValueKind.String &&
+                Guid.TryParse(node.GetString(), out var id)) return id;
+        }
+        catch (JsonException) { /* Legacy SRM records may not have structured metadata. */ }
+        return null;
+    }
+
+    private static async Task<IResult> LegacyPartnersAsync(
+        IQueryDispatcher queries, CancellationToken ct)
+    {
+        var srms = await queries.DispatchAsync(new GetCatalogItemsByGroupSlugQuery(Suppliers), ct);
+        var imported = srms.Select(LegacyLink).Where(x => x.HasValue)
+            .Select(x => x!.Value).ToHashSet();
+
+        var result = new List<LegacyPartnerDto>();
+        foreach (var source in new[] { "carriers", "agents" })
+        {
+            var entries = await queries.DispatchAsync(
+                new GetCatalogItemsByGroupSlugQuery(source), ct);
+            result.AddRange(entries.Select(x => new LegacyPartnerDto(
+                source, x.Id, x.Code, x.Name, imported.Contains(x.Id))));
+        }
+        return Results.Ok(result.OrderBy(x => x.SourceGroup)
+            .ThenBy(x => x.Name).ToArray());
+    }
+
+    private static async Task<IResult> ImportLegacyAsync(
+        string source, Guid legacyId, IQueryDispatcher queries,
+        ICommandDispatcher commands, ICatalogGroupRepository groups,
+        ICatalogItemRepository items, HttpContext context, CancellationToken ct)
+    {
+        if (source is not ("carriers" or "agents") || legacyId == Guid.Empty)
+            return Results.BadRequest(new { code = "srm_invalid_legacy_source" });
+        var originGroup = await groups.GetBySlugAsync(source, ct);
+        var origin = await items.GetByIdAsync(legacyId, ct);
+        if (originGroup is null || origin is null || origin.IsDeleted ||
+            !origin.IsActive || origin.CatalogGroupId != originGroup.Id)
+            return Results.NotFound(new { code = "srm_legacy_record_not_found" });
+
+        var srms = await queries.DispatchAsync(new GetCatalogItemsByGroupSlugQuery(Suppliers), ct);
+        var match = srms.FirstOrDefault(x => LegacyLink(x) == legacyId);
+        if (match is not null)
+            return Results.Ok(new { supplierId = match.Id, alreadyImported = true });
+
+        // Do not merge companies just because their names resemble each other.
+        // Requires a human review where a provider already exists under another ID.
+        if (srms.Any(x => string.Equals(x.Name, origin.Name, StringComparison.OrdinalIgnoreCase)))
+            return Results.Conflict(new { code = "srm_supplier_name_collision_review_required" });
+
+        var metadata = JsonSerializer.Serialize(new {
+            supplierType = source == "carriers" ? "carrier" : "agent",
+            legacyConfigId = origin.Id,
+            legacyConfigGroup = source,
+            legacyCode = origin.Code,
+            migratedAtUtc = DateTime.UtcNow.ToString("O"),
+        });
+        // Existing Config carrier/agent records must remain available to Pricing.
+        // This creates the audited SRM supplier with a stable back-reference.
+        var request = new SrmRecordRequest(
+            origin.Name, origin.Description, origin.Value ?? origin.Name,
+            metadata, srms.Count + 1);
+        return await CreateAsync(Suppliers, "Proveedores SRM", request,
+            commands, groups, items, context, ct);
     }
 
     private static async Task<IResult> ReadAsync(
@@ -162,6 +244,29 @@ public static class SrmCatalogEndpoints
                     supplierType.ValueKind != JsonValueKind.String ||
                     string.IsNullOrWhiteSpace(supplierType.GetString()))
                     return Results.BadRequest(new { code = "srm_supplier_type_required" });
+                if (metadata.TryGetProperty("countryId", out var countryId) &&
+                    countryId.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                {
+                    if (countryId.ValueKind != JsonValueKind.String ||
+                        !Guid.TryParse(countryId.GetString(), out var parsedCountry))
+                        return Results.BadRequest(new { code = "srm_invalid_country" });
+                    var countryGroup = await groups.GetBySlugAsync("countries", ct);
+                    var country = await items.GetByIdAsync(parsedCountry, ct);
+                    if (countryGroup is null || country is null ||
+                        country.IsDeleted || !country.IsActive ||
+                        country.CatalogGroupId != countryGroup.Id)
+                        return Results.BadRequest(new { code = "srm_invalid_country" });
+                }
+                foreach (var (property, limit) in new[] {
+                    ("taxId", 80), ("website", 200), ("contactName", 140),
+                    ("contactEmail", 180), ("contactPhone", 40) })
+                {
+                    if (metadata.TryGetProperty(property, out var value) &&
+                        value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) &&
+                        (value.ValueKind != JsonValueKind.String ||
+                         value.GetString()!.Length > limit))
+                        return Results.BadRequest(new { code = "srm_invalid_supplier_field", property });
+                }
                 return null;
             }
 
@@ -189,6 +294,23 @@ public static class SrmCatalogEndpoints
                     expiry.ValueKind != JsonValueKind.String ||
                     !DateOnly.TryParseExact(expiry.GetString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
                     return Results.BadRequest(new { code = "srm_invalid_expiry" });
+                if (metadata.TryGetProperty("paymentDays", out var days) &&
+                    (days.ValueKind != JsonValueKind.Number ||
+                     !days.TryGetInt32(out var count) || count < 0 || count > 365))
+                    return Results.BadRequest(new { code = "srm_invalid_payment_days" });
+                if (metadata.TryGetProperty("currencyCode", out var currency) &&
+                    (currency.ValueKind != JsonValueKind.String ||
+                     currency.GetString() is not ("USD" or "CRC" or "EUR")))
+                    return Results.BadRequest(new { code = "srm_invalid_currency" });
+                foreach (var (property, limit) in new[] {
+                    ("rateReference", 160), ("serviceCoverage", 180) })
+                {
+                    if (metadata.TryGetProperty(property, out var value) &&
+                        value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) &&
+                        (value.ValueKind != JsonValueKind.String ||
+                         value.GetString()!.Length > limit))
+                        return Results.BadRequest(new { code = "srm_invalid_contract_field", property });
+                }
             }
 
             return null;
