@@ -20,7 +20,9 @@ public sealed class GetCatalogItemsForSelectQueryHandler(
             && !string.IsNullOrWhiteSpace(query.CatalogGroupSlug)
             && string.IsNullOrWhiteSpace(query.Search)
             // Direct SQL warehouse migrations do not invalidate Redis select snapshots.
-            && !string.Equals(query.CatalogGroupSlug, "pricing-warehouses", StringComparison.OrdinalIgnoreCase);
+            && !string.Equals(query.CatalogGroupSlug, "pricing-warehouses", StringComparison.OrdinalIgnoreCase)
+            // Country migrations also write directly to PostgreSQL; do not serve an old 3-country cache.
+            && !string.Equals(query.CatalogGroupSlug, "countries", StringComparison.OrdinalIgnoreCase);
 
         IReadOnlyCollection<CatalogItemSelectDto>? items = null;
 

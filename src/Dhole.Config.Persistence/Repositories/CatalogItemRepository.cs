@@ -241,7 +241,8 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
             .Take(
                 catalogGroupSlug is not null
                     && (catalogGroupSlug.Equals("pol", StringComparison.OrdinalIgnoreCase)
-                        || catalogGroupSlug.Equals("poe", StringComparison.OrdinalIgnoreCase))
+                        || catalogGroupSlug.Equals("poe", StringComparison.OrdinalIgnoreCase)
+                        || catalogGroupSlug.Equals("countries", StringComparison.OrdinalIgnoreCase))
                     ? 2500
                     // Do not truncate global WHS after the first 50 options.
                     : catalogGroupSlug?.Equals("pricing-warehouses", StringComparison.OrdinalIgnoreCase) == true
