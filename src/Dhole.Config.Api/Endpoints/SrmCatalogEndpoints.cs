@@ -298,10 +298,18 @@ public static class SrmCatalogEndpoints
                     (days.ValueKind != JsonValueKind.Number ||
                      !days.TryGetInt32(out var count) || count < 0 || count > 365))
                     return Results.BadRequest(new { code = "srm_invalid_payment_days" });
-                if (metadata.TryGetProperty("currencyCode", out var currency) &&
-                    (currency.ValueKind != JsonValueKind.String ||
-                     currency.GetString() is not ("USD" or "CRC" or "EUR")))
-                    return Results.BadRequest(new { code = "srm_invalid_currency" });
+                if (metadata.TryGetProperty("currencyCode", out var currency))
+                {
+                    var currencyValue = currency.ValueKind == JsonValueKind.String
+                        ? currency.GetString()?.Trim() : null;
+                    if (string.IsNullOrWhiteSpace(currencyValue) || currencyValue.Length > 12)
+                        return Results.BadRequest(new { code = "srm_invalid_currency" });
+                    var validCurrencies = await items.GetActiveByGroupSlugAsync("currencies", ct);
+                    if (!validCurrencies.Any(x =>
+                        string.Equals(x.Value, currencyValue, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(x.Code, currencyValue, StringComparison.OrdinalIgnoreCase)))
+                        return Results.BadRequest(new { code = "srm_currency_not_in_config" });
+                }
                 foreach (var (property, limit) in new[] {
                     ("rateReference", 160), ("serviceCoverage", 180) })
                 {
