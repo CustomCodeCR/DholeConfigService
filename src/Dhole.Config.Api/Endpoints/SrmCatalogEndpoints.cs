@@ -260,6 +260,43 @@ public static class SrmCatalogEndpoints
                         country.CatalogGroupId != countryGroup.Id)
                         return Results.BadRequest(new { code = "srm_invalid_country" });
                 }
+                if (metadata.TryGetProperty("shipmentModes", out var modes))
+                {
+                    if (modes.ValueKind != JsonValueKind.Array || modes.GetArrayLength() > 6)
+                        return Results.BadRequest(new { code = "srm_invalid_shipment_modes" });
+                    var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                        { "Fcl", "Lcl", "Ftl", "Ltl", "Air", "AirConsol" };
+                    var chosen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var mode in modes.EnumerateArray())
+                        if (mode.ValueKind != JsonValueKind.String ||
+                            !allowed.Contains(mode.GetString() ?? "") ||
+                            !chosen.Add(mode.GetString() ?? ""))
+                            return Results.BadRequest(new { code = "srm_invalid_shipment_modes" });
+                }
+
+                if (metadata.TryGetProperty("contacts", out var contacts))
+                {
+                    if (contacts.ValueKind != JsonValueKind.Array || contacts.GetArrayLength() > 30)
+                        return Results.BadRequest(new { code = "srm_invalid_contacts" });
+                    foreach (var contact in contacts.EnumerateArray())
+                    {
+                        if (contact.ValueKind != JsonValueKind.Object)
+                            return Results.BadRequest(new { code = "srm_invalid_contacts" });
+                        foreach (var (field, limit) in new[] { ("name", 140), ("email", 180),
+                            ("phone", 40), ("role", 100) })
+                        {
+                            if (contact.TryGetProperty(field, out var part) &&
+                                part.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) &&
+                                (part.ValueKind != JsonValueKind.String ||
+                                 part.GetString()!.Length > limit))
+                                return Results.BadRequest(new { code = "srm_invalid_contact_field", field });
+                        }
+                        if (!contact.TryGetProperty("name", out var contactName) ||
+                            contactName.ValueKind != JsonValueKind.String ||
+                            string.IsNullOrWhiteSpace(contactName.GetString()))
+                            return Results.BadRequest(new { code = "srm_contact_name_required" });
+                    }
+                }
                 foreach (var (property, limit) in new[] {
                     ("taxId", 80), ("website", 200), ("contactName", 140),
                     ("contactEmail", 180), ("contactPhone", 40) })
