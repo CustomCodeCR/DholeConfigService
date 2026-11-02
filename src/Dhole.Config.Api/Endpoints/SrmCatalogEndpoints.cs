@@ -35,6 +35,9 @@ public static class SrmCatalogEndpoints
         route.MapGet("/supplier-types", (IQueryDispatcher queries, CancellationToken ct) =>
             ReadAsync("srm-supplier-types", queries, ct))
             .RequireScope("srm.supplier.read");
+        // Cost editors receive only minimal supplier identities, not contacts or fiscal data.
+        route.MapGet("/pricing-suppliers", PricingSupplierOptionsAsync)
+            .RequireScope("pricing.cost.view");
         // Read-only discovery of legacy Pricing carrier/agent directories.
         route.MapGet("/legacy-partners", LegacyPartnersAsync)
             .RequireScope("srm.supplier.read");
@@ -95,6 +98,32 @@ public static class SrmCatalogEndpoints
         }
         catch (JsonException) { /* Legacy SRM records may not have structured metadata. */ }
         return null;
+    }
+
+    private static async Task<IResult> PricingSupplierOptionsAsync(
+        IQueryDispatcher queries, CancellationToken ct)
+    {
+        var rows = await queries.DispatchAsync(new GetCatalogItemsByGroupSlugQuery(Suppliers), ct);
+        var options = rows.Where(x => x.IsActive).Select(x =>
+        {
+            var supplierType = "other";
+            var modes = new List<string>();
+            try
+            {
+                using var doc = JsonDocument.Parse(x.MetadataJson ?? "{}");
+                if (doc.RootElement.TryGetProperty("supplierType", out var type) &&
+                    type.ValueKind == JsonValueKind.String)
+                    supplierType = type.GetString() ?? "other";
+                if (doc.RootElement.TryGetProperty("shipmentModes", out var shipments) &&
+                    shipments.ValueKind == JsonValueKind.Array)
+                    modes = shipments.EnumerateArray().Where(m => m.ValueKind == JsonValueKind.String)
+                        .Select(m => m.GetString()!).ToList();
+            }
+            catch (JsonException) { /* Legacy supplier metadata may be malformed. */ }
+            return new { x.Id, x.Name, x.Code, x.IsActive, SupplierType = supplierType,
+                ShipmentModes = modes.ToArray() };
+        }).ToArray();
+        return Results.Ok(options);
     }
 
     private static async Task<IResult> LegacyPartnersAsync(
