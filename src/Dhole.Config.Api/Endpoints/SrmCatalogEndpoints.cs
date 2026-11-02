@@ -32,6 +32,9 @@ public static class SrmCatalogEndpoints
         route.MapGet("/suppliers", (IQueryDispatcher queries, CancellationToken ct) =>
             ReadAsync(Suppliers, queries, ct))
             .RequireScope("srm.supplier.read");
+        route.MapGet("/supplier-types", (IQueryDispatcher queries, CancellationToken ct) =>
+            ReadAsync("srm-supplier-types", queries, ct))
+            .RequireScope("srm.supplier.read");
         // Read-only discovery of legacy Pricing carrier/agent directories.
         route.MapGet("/legacy-partners", LegacyPartnersAsync)
             .RequireScope("srm.supplier.read");
