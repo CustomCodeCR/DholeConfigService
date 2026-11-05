@@ -27,7 +27,9 @@ public sealed class CrmPhase3CatalogTests
                 where cat.Slug == pair.Key && cat.IsActive && item.IsActive
                 select item.Code
             ).ToListAsync();
-            CollectionAssert.AreEquivalent(pair.Value,result.ToArray());
+            // Other modules may extend these catalogs; required CRM values must remain present.
+            CollectionAssert.IsSubsetOf(pair.Value, result.ToArray());
+            CollectionAssert.AreEquivalent(result.ToArray(), result.Distinct().ToArray());
         }
         await db.Database.MigrateAsync();
         Assert.AreEqual(4, await db.CatalogGroups.CountAsync(x => expected.Keys.Contains(x.Slug)));
