@@ -37,6 +37,7 @@ public static class ConfigRealtimeInvalidation
     {
         "catalog-item" => "config.catalog-item.changed.v1",
         "catalog-group" => "config.catalog-group.changed.v1",
+        "srm-supplier" => "srm.supplier.changed.v1",
         _ => throw new ArgumentException("Unknown Config realtime resource.", nameof(resourceType))
     };
 
@@ -53,13 +54,13 @@ public static class ConfigRealtimeInvalidation
             eventId,
             eventType,
             schemaVersion = 1,
-            aggregateType = kind,
+            aggregateType = kind == "srm-supplier" ? "supplier" : kind,
             aggregateId = entityId.ToString("D"),
             aggregateVersion = version,
             occurredAtUtc = at,
             producer = "DholeConfigService",
             correlationId,
-            audienceRef = $"config:{kind}:{entityId:D}",
+            audienceRef = kind == "srm-supplier" ? $"srm:supplier:{entityId:D}" : $"config:{kind}:{entityId:D}",
             payload = new { changedFields = new[] { "catalog" } }
         });
     }
