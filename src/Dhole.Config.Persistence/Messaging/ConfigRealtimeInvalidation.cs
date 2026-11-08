@@ -18,6 +18,21 @@ public static class ConfigRealtimeInvalidation
         config.GetValue<bool>("Realtime:BatchApproved") &&
         string.Equals(config["Realtime:ReleaseId"], ReleaseId, StringComparison.Ordinal);
 
+    // Cross-instance ordering is deliberately NOT inferred from this hint.
+    // Consumers must always reconcile via the owner REST endpoint.
+    private static long _lastObservedMicrosecond;
+    public static long NextVersionHint()
+    {
+        while (true)
+        {
+            var now = (DateTimeOffset.UtcNow.Ticks - DateTimeOffset.UnixEpoch.Ticks) / 10;
+            var previous = Volatile.Read(ref _lastObservedMicrosecond);
+            var next = Math.Max(now, previous + 1);
+            if (Interlocked.CompareExchange(ref _lastObservedMicrosecond, next, previous) == previous)
+                return next;
+        }
+    }
+
     public static string EventType(string resourceType) => resourceType switch
     {
         "catalog-item" => "config.catalog-item.changed.v1",
