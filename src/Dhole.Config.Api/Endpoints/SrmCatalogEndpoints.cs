@@ -1,3 +1,5 @@
+using Dhole.Config.Persistence.DbContexts;
+using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using System.Text.Json;
 using CustomCodeFramework.Api.Responses;
@@ -32,6 +34,18 @@ public static class SrmCatalogEndpoints
         route.MapGet("/suppliers", (IQueryDispatcher queries, CancellationToken ct) =>
             ReadAsync(Suppliers, queries, ct))
             .RequireScope("srm.supplier.read");
+
+        // F6.05: SRM-supplier-specific ACL; generic Config scopes do not
+        // grant supplier visibility, nor vice versa.
+        route.MapGet("/suppliers/{supplierId:guid}/realtime-access", async (
+            Guid supplierId, ServiceDbContext db, CancellationToken ct) =>
+        {
+            var found = await db.CatalogItems.AsNoTracking().AnyAsync(item =>
+                item.Id == supplierId && !item.IsDeleted &&
+                item.CatalogGroup.Slug == Suppliers && !item.CatalogGroup.IsDeleted, ct);
+            return found ? Results.Ok() : Results.NotFound();
+        }).RequireScope("srm.supplier.read");
+
         route.MapGet("/supplier-types", (IQueryDispatcher queries, CancellationToken ct) =>
             ReadAsync("srm-supplier-types", queries, ct))
             .RequireScope("srm.supplier.read");
