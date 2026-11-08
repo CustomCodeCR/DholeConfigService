@@ -1,0 +1,40 @@
+name: Realtime F6.05 Config and SRM catalog Outbox (isolated)
+on:
+  push:
+    branches: [feature/dhole-realtime-universal-rt-20261107-01]
+    paths:
+      - 'src/Dhole.Config.Persistence/DbContexts/ServiceDbContext.cs'
+      - 'src/Dhole.Config.Persistence/Messaging/ConfigRealtimeInvalidation.cs'
+      - 'src/Dhole.Config.Workers/Outbox/OutboxProcessor.cs'
+      - 'tests/Dhole.Config.IntegrationTests/F6ConfigRealtimeContractTests.cs'
+      - 'version.json'
+      - 'Directory.Build.targets'
+      - 'CHANGELOG.md'
+      - '.github/workflows/realtime-f6-config.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+jobs:
+  config-f6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Validate candidate SemVer
+        run: python3 scripts/verify_dhole_version.py
+      - name: Authenticate package registry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet nuget update source github --username github-actions --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile NuGet.Config
+      - name: Restore Config integration tests
+        run: dotnet restore tests/Dhole.Config.IntegrationTests/Dhole.Config.IntegrationTests.csproj --configfile NuGet.Config
+      - name: Build Config API and tests
+        run: dotnet build tests/Dhole.Config.IntegrationTests/Dhole.Config.IntegrationTests.csproj -c Release --no-restore
+      - name: Build Config Outbox worker
+        run: dotnet build src/Dhole.Config.Workers/Dhole.Config.Workers.csproj -c Release
+      - name: Test safe Config/SRM contract and release gate
+        run: dotnet test tests/Dhole.Config.IntegrationTests/Dhole.Config.IntegrationTests.csproj -c Release --no-build --filter FullyQualifiedName~F6ConfigRealtimeContractTests -- RunConfiguration.TreatNoTestsAsError=true
