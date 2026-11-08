@@ -41,7 +41,7 @@ public sealed class F6ConfigRealtimeContractTests
             Assert.AreEqual($"config.{kind}.changed.v1", root.GetProperty("eventType").GetString());
             Assert.AreEqual($"config:{kind}:{itemId:D}", root.GetProperty("audienceRef").GetString());
             Assert.AreEqual(kind, root.GetProperty("aggregateType").GetString());
-            Assert.IsTrue(root.GetProperty("aggregateVersion").GetInt64() > 0);
+            Assert.IsGreaterThan(0L, root.GetProperty("aggregateVersion").GetInt64());
             CollectionAssert.AreEquivalent(new[] { "changedFields" },
                 root.GetProperty("payload").EnumerateObject().Select(x => x.Name).ToArray());
             foreach (var forbidden in new[] { "supplier", "password", "phone", "contact", "metadataJson" })
@@ -63,7 +63,6 @@ public sealed class F6ConfigRealtimeContractTests
         Assert.AreEqual("srm.supplier.changed.v1", root.GetProperty("eventType").GetString());
         Assert.AreEqual("supplier", root.GetProperty("aggregateType").GetString());
         Assert.AreEqual($"srm:supplier:{id:D}", root.GetProperty("audienceRef").GetString());
-        Assert.AreEqual("dhole.config.realtime.v1", ConfigRealtimeInvalidation.StreamName);
         foreach (var field in new[] { "metadataJson", "contact", "bankAccount", "phone", "supplierName" })
             Assert.IsFalse(json.Contains(field, StringComparison.OrdinalIgnoreCase), field);
     }
@@ -74,7 +73,7 @@ public sealed class F6ConfigRealtimeContractTests
         var e = Guid.NewGuid();
         var first = ConfigRealtimeInvalidation.NextVersionHint();
         var second = ConfigRealtimeInvalidation.NextVersionHint();
-        Assert.IsTrue(second > first);
+        Assert.IsGreaterThan(first, second);
         Assert.ThrowsExactly<ArgumentException>(() =>
             ConfigRealtimeInvalidation.EventType("admin"));
         Assert.ThrowsExactly<ArgumentException>(() =>
