@@ -50,6 +50,25 @@ public sealed class F6ConfigRealtimeContractTests
     }
 
     [TestMethod]
+    public void Srm_supplier_has_separate_audience_and_the_same_safe_Config_stream()
+    {
+        var id = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var json = ConfigRealtimeInvalidation.Serialize(
+            eventId, id, "srm-supplier",
+            ConfigRealtimeInvalidation.NextVersionHint(),
+            DateTimeOffset.UtcNow, "srm-ci");
+        using var parsed = JsonDocument.Parse(json);
+        var root = parsed.RootElement;
+        Assert.AreEqual("srm.supplier.changed.v1", root.GetProperty("eventType").GetString());
+        Assert.AreEqual("supplier", root.GetProperty("aggregateType").GetString());
+        Assert.AreEqual($"srm:supplier:{id:D}", root.GetProperty("audienceRef").GetString());
+        Assert.AreEqual("dhole.config.realtime.v1", ConfigRealtimeInvalidation.StreamName);
+        foreach (var field in new[] { "metadataJson", "contact", "bankAccount", "phone", "supplierName" })
+            Assert.IsFalse(json.Contains(field, StringComparison.OrdinalIgnoreCase), field);
+    }
+
+    [TestMethod]
     public void Resource_ids_versions_and_unknown_kinds_are_validated()
     {
         var e = Guid.NewGuid();
