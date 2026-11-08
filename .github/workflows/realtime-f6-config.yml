@@ -4,6 +4,7 @@ on:
     branches: [feature/dhole-realtime-universal-rt-20261107-01]
     paths:
       - 'src/Dhole.Config.Persistence/DbContexts/ServiceDbContext.cs'
+      - 'src/Dhole.Config.Api/Endpoints/SrmCatalogEndpoints.cs'
       - 'src/Dhole.Config.Persistence/Messaging/ConfigRealtimeInvalidation.cs'
       - 'src/Dhole.Config.Workers/Outbox/OutboxProcessor.cs'
       - 'tests/Dhole.Config.IntegrationTests/F6ConfigRealtimeContractTests.cs'
