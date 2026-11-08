@@ -56,7 +56,7 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
             return;
         ChangeTracker.DetectChanges();
         foreach (var entry in ChangeTracker.Entries()
-            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToArray())
         {
             string kind;
             Guid aggregateId;
