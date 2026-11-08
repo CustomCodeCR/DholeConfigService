@@ -55,6 +55,14 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
         if (!ConfigRealtimeInvalidation.IsEnabled(realtimeConfiguration))
             return;
         ChangeTracker.DetectChanges();
+        var supplierGroupId = ChangeTracker.Entries<CatalogGroup>()
+            .Select(x => x.Entity)
+            .FirstOrDefault(x => x.Slug == "srm-suppliers")?.Id ?? Guid.Empty;
+        if (supplierGroupId == Guid.Empty && ChangeTracker.Entries<CatalogItem>()
+            .Any(x => x.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            supplierGroupId = CatalogGroups.AsNoTracking()
+                .Where(x => x.Slug == "srm-suppliers")
+                .Select(x => x.Id).FirstOrDefault();
         foreach (var entry in ChangeTracker.Entries()
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToArray())
         {
@@ -67,7 +75,8 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
                     aggregateId = group.Id;
                     break;
                 case CatalogItem item:
-                    kind = "catalog-item";
+                    kind = supplierGroupId != Guid.Empty && item.CatalogGroupId == supplierGroupId
+                        ? "srm-supplier" : "catalog-item";
                     aggregateId = item.Id;
                     break;
                 default:
