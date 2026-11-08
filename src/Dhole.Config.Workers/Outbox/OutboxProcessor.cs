@@ -86,6 +86,9 @@ internal sealed class OutboxProcessor(
 
     private string ResolveStreamName(string eventName)
     {
+        if (eventName is "config.catalog-group.changed.v1"
+            or "config.catalog-item.changed.v1")
+            return "dhole.config.realtime.v1";
         return configuration[$"Redis:Streams:Destinations:{eventName}"]
             ?? configuration["Redis:Streams:DefaultStreamName"]
             ?? "dhole.auth.events";
