@@ -57,7 +57,6 @@ public sealed class CleanPricingRouteCatalogs : Migration
                 (90,  'c2600000-0000-4000-8000-000000000009', 'c2610000-0000-4000-8000-000000000009', 'SD_CIUDAD_DE_PANAMA_PANAMA',          'ciudad-de-panama-panama',         'Ciudad de Panama, Panama',        'PA'),
                 (100, 'c2600000-0000-4000-8000-000000000010', 'c2610000-0000-4000-8000-000000000010', 'SD_COLON_FREE_ZONE_PANAMA',            'colon-free-zone-panama',          'Colon Free Zone, Panama',         'PA');
 
-            -- Remove semantic duplicates of the ten canonical SD locations before normalizing them.
             DELETE FROM config."CatalogItems" i
             USING config."CatalogGroups" g, "_dhole_sd_routes" d
             WHERE i.catalog_group_id = g.id
@@ -76,7 +75,6 @@ public sealed class CleanPricingRouteCatalogs : Migration
                     )
               );
 
-            -- Guarantee the requested SD locations in both POL and POE, preserving the stable ids already used by Pricing.
             INSERT INTO config."CatalogItems"
                 (id, catalog_group_id, code, slug, name, description, value, metadata_json, sort_order,
                  is_system, is_active, created_at_utc, created_by, is_deleted)
@@ -119,8 +117,6 @@ public sealed class CleanPricingRouteCatalogs : Migration
                 updated_at_utc = NOW(),
                 updated_by = 'migration-clean-route-catalogs';
 
-            -- Give every active POL/POE item the same metadata contract.
-            -- The Panama pseudo-POE keeps one extra boolean because it expands to all real Panama CY POEs.
             UPDATE config."CatalogItems" i
             SET
                 metadata_json = jsonb_build_object(
@@ -182,8 +178,6 @@ public sealed class CleanPricingRouteCatalogs : Migration
               AND g.slug IN ('pol', 'poe')
               AND i.is_deleted = FALSE;
 
-            -- Remove repeated CY/SD locations inside the same catalog using a semantic display key.
-            -- Prefer reviewed CY_/SD_ system records when two old variants represent the same place.
             WITH normalized AS (
                 SELECT
                     i.id,
@@ -216,7 +210,6 @@ public sealed class CleanPricingRouteCatalogs : Migration
             USING normalized n
             WHERE i.id = n.id AND n.rn > 1;
 
-            -- CY first and SD second, each section alphabetically ordered without accents.
             WITH ordered AS (
                 SELECT
                     i.id,
@@ -240,8 +233,6 @@ public sealed class CleanPricingRouteCatalogs : Migration
             FROM ordered
             WHERE i.id = ordered.id;
 
-            -- These temporary catalogs are no longer read by Web or Pricing.
-            -- Hard-delete them so Config exposes only the catalogs that are actually used.
             DELETE FROM config."CatalogGroups"
             WHERE slug IN ('land-pol', 'land-poe');
             """
