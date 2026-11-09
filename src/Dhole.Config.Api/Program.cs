@@ -95,8 +95,8 @@ using (var scope = app.Services.CreateScope())
     await dbContext.Database.MigrateAsync();
 
     // Some catalog migrations seed reference data directly in PostgreSQL. Clear the
-    // Redis-backed catalog caches after migrations so newly seeded items are visible
-    // immediately instead of serving a stale select list.
+    // Redis-backed catalog caches after migrations so newly seeded items and current
+    // business/display Values are visible instead of serving stale select snapshots.
     var cache = scope.ServiceProvider.GetRequiredService<IConfigCacheService>();
     foreach (var slug in new[]
              {
@@ -107,11 +107,9 @@ using (var scope = app.Services.CreateScope())
                  "pricing-sales-executives",
                  "country-vat-rates",
                  "agents",
+                 "currencies",
                  "pol",
                  "poe",
-                 "pricing-services",
-                 "land-pol",
-                 "land-poe",
                  "land-equipment-types",
                  "land-equipment-sizes",
                  "land-equipment-kinds",

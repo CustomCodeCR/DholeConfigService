@@ -82,9 +82,11 @@ public static class PublicPricingWarehouseLookupEndpoints
                 Candidate = candidate,
                 PolScore = ScorePol(candidate, requestedPol, requestedCity),
                 RoutingScore = ScoreRouting(candidate.MetadataJson, shipmentMode, route),
+                AgentScore = ScoreAgent(candidate.MetadataJson, agentCode, agent),
             })
-            .Where(item => item.PolScore > 0)
-            .OrderByDescending(item => item.PolScore)
+            .Where(item => item.PolScore > 0 && item.AgentScore >= 0)
+            .OrderByDescending(item => item.AgentScore)
+            .ThenByDescending(item => item.PolScore)
             .ThenByDescending(item => item.RoutingScore)
             .ThenBy(item => item.Candidate.SortOrder)
             .Select(item => item.Candidate)
@@ -94,15 +96,10 @@ public static class PublicPricingWarehouseLookupEndpoints
 
         using var document = ParseMetadata(selected.MetadataJson);
         var root = document.RootElement;
-        var hasAgentContext = !string.IsNullOrWhiteSpace(agentCode) || !string.IsNullOrWhiteSpace(agent);
-        var gcfOnly = Normalize(shipmentMode) == "FCL"
-            && IsChinaWarehouse(root, requestedPol)
-            && hasAgentContext
-            && !IsRsLogistics(agentCode, agent);
-        var contacts = gcfOnly
-            ? new[] { CreateGcfContact() }
-            : ReadContacts(root, shipmentMode, route);
-        var photos = gcfOnly ? Array.Empty<object>() : ReadPhotos(root);
+        // Photos and contacts belong to the selected agent office, never to a different agent.
+        var gcfOnly = false;
+        var contacts = ReadContacts(root, shipmentMode, route);
+        var photos = ReadPhotos(root);
 
         return Results.Ok(new
         {
@@ -142,27 +139,30 @@ public static class PublicPricingWarehouseLookupEndpoints
         return Normalize(requestedPol).Contains("CHINA", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsRsLogistics(string? agentCode, string? agentName)
+    private static int ScoreAgent(string metadataJson, string? agentCode, string? agentName)
     {
-        foreach (var value in new[] { agentCode, agentName })
-        {
-            var compact = Compact(value);
-            if (compact == "RS" || compact.Contains("RSLOGISTICS", StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
+        using var document = ParseMetadata(metadataJson);
+        var root = document.RootElement;
+        var configured = ReadRuleValues(root, ["agentCodes", "agentNames"], ["agentCode", "agentName"]);
+        var requested = new[] { Compact(agentCode), Compact(agentName) }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        if (requested.Length == 0) return configured.Length == 0 ? 10 : 0;
 
-        return false;
+        if (configured.Any(value => requested.Any(input =>
+            Compact(value) == input || (Compact(value) == "WWL" && input.Contains("WORLDWIDELOGISTICS"))
+            || (Compact(value) == "RS" && input.Contains("RSLOGISTICS")))))
+            return 100;
+
+        // Historic untagged China offices and their images belong to RS.
+        // Never expose RS contacts/photos to a different explicitly selected agent.
+        if (configured.Length == 0 && requested.Any(value =>
+            value == "RS" || value.Contains("RSLOGISTICS"))) return 20;
+
+        // An untagged office outside China remains compatible with the legacy resolver.
+        if (configured.Length == 0 && !IsChinaWarehouse(root, string.Empty)) return 10;
+        return -1;
     }
-
-    private static PublicContact CreateGcfContact() => new(
-        "Grupo Castro Fallas",
-        string.Empty,
-        "china@grupocastrofallas.com",
-        "Contacto GCF",
-        true,
-        [],
-        ["FCL"],
-        []);
 
     private static int ScorePol(WarehouseCandidate candidate, string requestedPol, string requestedCity)
     {

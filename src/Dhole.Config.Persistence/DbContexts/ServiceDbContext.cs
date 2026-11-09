@@ -8,10 +8,12 @@ using Dhole.Config.Domain.Catalogs.Entities;
 using Dhole.Config.Persistence.Auditing;
 using Dhole.Config.Persistence.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Dhole.Config.Persistence.DbContexts;
 
-public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
+public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
+    IConfiguration? realtimeConfiguration = null)
     : AppDbContextBase(options)
 {
     private const string SourceService = "DholeConfigService";
@@ -24,12 +26,14 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        AddRealtimeInvalidations();
         AddDomainEventsToOutbox();
         return base.SaveChangesAsync(cancellationToken);
     }
 
     public override int SaveChanges()
     {
+        AddRealtimeInvalidations();
         AddDomainEventsToOutbox();
         return base.SaveChanges();
     }
@@ -44,6 +48,61 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
 
         modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
         modelBuilder.ApplyConfiguration(new InboxMessageConfiguration());
+    }
+
+    private void AddRealtimeInvalidations()
+    {
+        if (!ConfigRealtimeInvalidation.IsEnabled(realtimeConfiguration))
+            return;
+        ChangeTracker.DetectChanges();
+        var supplierGroupId = ChangeTracker.Entries<CatalogGroup>()
+            .Select(x => x.Entity)
+            .FirstOrDefault(x => x.Slug == "srm-suppliers")?.Id ?? Guid.Empty;
+        if (supplierGroupId == Guid.Empty && ChangeTracker.Entries<CatalogItem>()
+            .Any(x => x.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            supplierGroupId = CatalogGroups.AsNoTracking()
+                .Where(x => x.Slug == "srm-suppliers")
+                .Select(x => x.Id).FirstOrDefault();
+        foreach (var entry in ChangeTracker.Entries()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToArray())
+        {
+            string kind;
+            Guid aggregateId;
+            switch (entry.Entity)
+            {
+                case CatalogGroup group:
+                    kind = "catalog-group";
+                    aggregateId = group.Id;
+                    break;
+                case CatalogItem item:
+                    kind = supplierGroupId != Guid.Empty && item.CatalogGroupId == supplierGroupId
+                        ? "srm-supplier" : "catalog-item";
+                    aggregateId = item.Id;
+                    break;
+                default:
+                    continue;
+            }
+            if (aggregateId == Guid.Empty) continue;
+            var eventId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var correlationId =
+                (AuditExecutionContextAccessor.Current?.CorrelationId ?? eventId).ToString("D");
+            var eventType = ConfigRealtimeInvalidation.EventType(kind);
+            OutboxMessages.Add(new OutboxMessage
+            {
+                EventId = eventId,
+                EventName = eventType,
+                EventType = eventType,
+                SourceService = SourceService,
+                PayloadJson = ConfigRealtimeInvalidation.Serialize(
+                    eventId, aggregateId, kind,
+                    ConfigRealtimeInvalidation.NextVersionHint(), now, correlationId),
+                CorrelationId = correlationId,
+                Status = OutboxMessageStatus.Pending,
+                RetryCount = 0,
+                CreatedAtUtc = now.UtcDateTime
+            });
+        }
     }
 
     private void AddDomainEventsToOutbox()
