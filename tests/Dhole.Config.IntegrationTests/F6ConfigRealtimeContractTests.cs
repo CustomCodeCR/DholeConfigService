@@ -50,6 +50,22 @@ public sealed class F6ConfigRealtimeContractTests
     }
 
     [TestMethod]
+    public void Shared_catalog_list_has_one_metadata_only_audience()
+    {
+        var id = ConfigRealtimeInvalidation.CatalogListId;
+        var json = ConfigRealtimeInvalidation.Serialize(Guid.NewGuid(), id,
+            "catalog-list", ConfigRealtimeInvalidation.NextVersionHint(),
+            DateTimeOffset.UtcNow, "catalog-ci");
+        using var parsed = JsonDocument.Parse(json);
+        Assert.AreEqual("config.catalog-list.changed.v1",
+            parsed.RootElement.GetProperty("eventType").GetString());
+        Assert.AreEqual($"config:catalog-list:{id:D}",
+            parsed.RootElement.GetProperty("audienceRef").GetString());
+        Assert.IsFalse(json.Contains("portName", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("metadataJson", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
     public void Srm_supplier_has_separate_audience_and_the_same_safe_Config_stream()
     {
         var id = Guid.NewGuid();

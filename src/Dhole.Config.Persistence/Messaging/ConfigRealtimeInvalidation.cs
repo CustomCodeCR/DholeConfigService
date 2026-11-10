@@ -11,6 +11,7 @@ public static class ConfigRealtimeInvalidation
 {
     public const string ReleaseId = "rt-20261107-01";
     public const string StreamName = "dhole.config.realtime.v1";
+    public static readonly Guid CatalogListId = Guid.Parse("00000000-0000-4000-8000-000000000042");
 
     public static bool IsEnabled(IConfiguration? config) =>
         config?.GetValue<bool>("Features:UniversalRealtimeEnabled") == true &&
@@ -37,6 +38,7 @@ public static class ConfigRealtimeInvalidation
     {
         "catalog-item" => "config.catalog-item.changed.v1",
         "catalog-group" => "config.catalog-group.changed.v1",
+        "catalog-list" => "config.catalog-list.changed.v1",
         "srm-supplier" => "srm.supplier.changed.v1",
         _ => throw new ArgumentException("Unknown Config realtime resource.", nameof(resourceType))
     };

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1] - 2026-11-09
+
+- PATCH: transactional metadata-only config.catalog-list invalidations on all catalog-item and group mutations so newly created ports and dropdown options can refresh through NotificationsHub.
+- Authenticated no-content owner ACL endpoint and staging DholeSystem/develop infrastructure. Ecosystem 1.15.2; production unchanged.
+
+
 ## [1.4.0] - 2026-11-09 (NotificationsHub universal realtime pilot; candidate)
 
 - MINOR: retain existing domain Outbox/REST realtime producer under NotificationsHub-based universal delivery; no shared framework changes.
