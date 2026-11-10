@@ -76,6 +76,10 @@ public static class CatalogItemEndpoints
             }
         );
 
+        // Authorization mirrors /select: authenticated users may refresh catalog options.
+        // No catalog data is returned to the realtime owner-ACL check.
+        group.MapGet("/realtime-access", () => Results.Ok());
+
         group
             .MapGet(
                 "/by-group/{catalogGroupSlug}",

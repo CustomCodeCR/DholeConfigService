@@ -63,6 +63,7 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
             supplierGroupId = CatalogGroups.AsNoTracking()
                 .Where(x => x.Slug == "srm-suppliers")
                 .Select(x => x.Id).FirstOrDefault();
+        var catalogListChanged = false;
         foreach (var entry in ChangeTracker.Entries()
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToArray())
         {
@@ -83,6 +84,7 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
                     continue;
             }
             if (aggregateId == Guid.Empty) continue;
+            catalogListChanged = true;
             var eventId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
             var correlationId =
@@ -96,6 +98,31 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
                 SourceService = SourceService,
                 PayloadJson = ConfigRealtimeInvalidation.Serialize(
                     eventId, aggregateId, kind,
+                    ConfigRealtimeInvalidation.NextVersionHint(), now, correlationId),
+                CorrelationId = correlationId,
+                Status = OutboxMessageStatus.Pending,
+                RetryCount = 0,
+                CreatedAtUtc = now.UtcDateTime
+            });
+        }
+
+        // A newly created item has no known item ID on other clients.
+        // Send one sanitized list invalidation from the same DB transaction.
+        if (catalogListChanged)
+        {
+            var eventId = Guid.NewGuid();
+            var now = DateTimeOffset.UtcNow;
+            var correlationId =
+                (AuditExecutionContextAccessor.Current?.CorrelationId ?? eventId).ToString("D");
+            var eventType = ConfigRealtimeInvalidation.EventType("catalog-list");
+            OutboxMessages.Add(new OutboxMessage
+            {
+                EventId = eventId,
+                EventName = eventType,
+                EventType = eventType,
+                SourceService = SourceService,
+                PayloadJson = ConfigRealtimeInvalidation.Serialize(eventId,
+                    ConfigRealtimeInvalidation.CatalogListId, "catalog-list",
                     ConfigRealtimeInvalidation.NextVersionHint(), now, correlationId),
                 CorrelationId = correlationId,
                 Status = OutboxMessageStatus.Pending,
