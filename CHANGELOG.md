@@ -2,6 +2,10 @@
 
 - Adds JWT-protected runtime endpoint inventory for API Manager without publishing any service routes.
 
+## [1.6.0] - 2026-11-14 (API Manager Route Discovery 143)
+
+- Adds JWT-protected runtime endpoint inventory for API Manager without publishing any service routes.
+
 # Changelog
 
 ## [1.5.0] - 2026-11-12
