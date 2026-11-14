@@ -1,3 +1,8 @@
+## [1.6.0] - 2026-11-14 (API Manager routes)
+
+- MINOR: inventario autenticado de endpoints Config para constructor de APIs, sin exponer datos.
+- Release global Dhole 1.56.0.
+
 # Changelog
 
 ## [1.5.0] - 2026-11-12
