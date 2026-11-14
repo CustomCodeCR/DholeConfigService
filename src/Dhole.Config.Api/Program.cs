@@ -1,3 +1,4 @@
+using Dhole.RouteDiscovery;
 using CustomCodeFramework.Api.DependencyInjection;
 using CustomCodeFramework.Api.Swagger;
 using CustomCodeFramework.Core.Abstractions;
@@ -50,6 +51,7 @@ builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
+app.MapDholeRouteManifest();
 
 app.UseCustomCodeApi();
 

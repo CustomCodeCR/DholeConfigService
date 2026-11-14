@@ -1,3 +1,7 @@
+## [1.6.0] - 2026-11-14 (Dhole API Manager route inventory)
+
+- Añade inventario de rutas REST visible solo con JWT y scope integrations.thirdparty.manage; no expone funcionalidades automáticamente.
+
 # Changelog
 
 ## [1.5.0] - 2026-11-12
