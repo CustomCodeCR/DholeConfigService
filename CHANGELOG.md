@@ -1,3 +1,8 @@
+## [1.6.0] - 2026-11-14 (API Manager discovery)
+
+- MINOR: catálogo interno seguro de rutas REST configurables para el administrador, sin publicar datos ni endpoints externos automáticamente.
+- Release global Dhole 1.56.0; conserva API y catálogos Config.
+
 # Changelog
 
 ## [1.5.0] - 2026-11-12
