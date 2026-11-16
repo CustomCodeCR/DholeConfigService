@@ -1,3 +1,8 @@
+## [1.7.0] - 2026-11-16 (Inventario HTTP protegido en producción)
+
+- MINOR DH-20261116-API-ROUTES-DEFAULTS-165: porta el catálogo runtime desde develop a master, protegido por JWT y integrations.thirdparty.manage, sin exposición de operaciones internas ni cambio de permisos REST.
+- Se alinea con Gateway 1.10.0 y el manifiesto Dhole 1.63.0.
+
 # Changelog
 
 ## [1.5.0] - 2026-11-12
