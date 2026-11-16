@@ -252,6 +252,37 @@ namespace Dhole.Config.Persistence.Migrations
                     b.ToTable("CatalogGroups", "config");
                 });
 
+            modelBuilder.Entity("Dhole.Config.Persistence.DbContexts.SupplierBankRecord", b =>
+                {
+                    b.Property<Guid>("SupplierId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supplier_id");
+
+                    b.Property<byte[]>("Ciphertext")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("ciphertext");
+
+                    b.Property<byte[]>("Nonce")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("nonce");
+
+                    b.Property<byte[]>("Tag")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("tag");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("SupplierId")
+                        .HasName("pk_srm_supplier_bank_records");
+
+                    b.ToTable("srm_supplier_bank_records", "config");
+                });
+
             modelBuilder.Entity("Dhole.Config.Domain.Catalogs.Entities.CatalogItem", b =>
                 {
                     b.Property<Guid>("Id")
