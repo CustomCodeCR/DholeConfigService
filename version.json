@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeConfigService",
-  "version": "1.5.0",
-  "ecosystemVersion": "1.46.0",
-  "releaseId": "DH-20261112-CRM-ACTIVITY-TYPES-125",
-  "releaseStatus": "candidate-ci-and-staging-pending",
-  "businessReleaseId": "DH-20261112-CRM-ACTIVITY-TYPES-125"
+  "version": "1.8.0",
+  "ecosystemVersion": "1.64.0",
+  "releaseId": "DH-20261116-SRM-SUPPLIER-FINANCE-176",
+  "releaseStatus": "candidate-master-ci-pending",
+  "businessReleaseId": "DH-20261116-SRM-SUPPLIER-FINANCE-176"
 }
