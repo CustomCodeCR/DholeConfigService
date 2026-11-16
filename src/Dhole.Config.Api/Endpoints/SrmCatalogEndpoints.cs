@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CustomCodeFramework.Api.Responses;
 using CustomCodeFramework.Cqrs.Dispatching;
 using Dhole.Config.Api.Authorization;
@@ -79,6 +80,9 @@ public static class SrmCatalogEndpoints
                 CancellationToken ct) =>
             UpdateSupplierAsync(supplierId, input, commands, groups, items, context, ct))
             .RequireScope("srm.supplier.update");
+
+        route.MapSrmSupplierBankEndpoints();
+        route.MapSrmHaciendaEndpoints();
 
         return app;
     }
@@ -196,6 +200,7 @@ public static class SrmCatalogEndpoints
         ICommandDispatcher commands, ICatalogGroupRepository groups,
         ICatalogItemRepository items, HttpContext context, CancellationToken ct)
     {
+        if (slug == Suppliers) request = NormalizeSupplier(request);
         var invalid = await ValidateAsync(slug, request, groups, items, ct);
         if (invalid is not null) return invalid;
 
@@ -240,6 +245,7 @@ public static class SrmCatalogEndpoints
             existing.CatalogGroupId != group.Id)
             return Results.NotFound(new { code = "srm_supplier_not_found" });
 
+        request = NormalizeSupplier(request);
         var invalid = await ValidateAsync(Suppliers, request, groups, items, ct);
         if (invalid is not null) return invalid;
 
@@ -249,6 +255,40 @@ public static class SrmCatalogEndpoints
                 request.Value?.Trim(), request.MetadataJson,
                 request.SortOrder, context.GetCurrentUserId()), ct);
         return EndpointResults.FromResult(result, context);
+    }
+
+    /// <summary>Enforce UPPER CASE on supplier text at the API boundary, not merely in the browser.</summary>
+    private static SrmRecordRequest NormalizeSupplier(SrmRecordRequest request)
+    {
+        static string? Upper(string? value) => value?.Trim().ToUpperInvariant();
+        try
+        {
+            if (JsonNode.Parse(request.MetadataJson ?? "{}") is not JsonObject metadata)
+                return request;
+            static void UpperField(JsonObject obj, string key)
+            {
+                if (obj[key] is JsonValue value && value.TryGetValue<string>(out var text))
+                    obj[key] = text.Trim().ToUpperInvariant();
+            }
+            foreach (var field in new[] { "taxId", "companyPhone", "address",
+                "economicActivityCode", "observations", "contactName" })
+                UpperField(metadata, field);
+            if (metadata["contacts"] is JsonArray contacts)
+                foreach (var contact in contacts.OfType<JsonObject>())
+                {
+                    UpperField(contact, "name");
+                    UpperField(contact, "role");
+                }
+            if (metadata["creditTerms"] is JsonObject terms)
+            {
+                UpperField(terms, "notes");
+                UpperField(terms, "paymentConditions");
+            }
+            return request with { Name = Upper(request.Name) ?? "",
+                Description = Upper(request.Description), Value = Upper(request.Value),
+                MetadataJson = metadata.ToJsonString() };
+        }
+        catch (JsonException) { return request; }
     }
 
     private static async Task<IResult?> ValidateAsync(
@@ -326,7 +366,30 @@ public static class SrmCatalogEndpoints
                             return Results.BadRequest(new { code = "srm_contact_name_required" });
                     }
                 }
+                // Bank account data is NEVER accepted in general catalog metadata.
+                if (metadata.TryGetProperty("bankAccounts", out _) ||
+                    metadata.TryGetProperty("bankAccount", out _) ||
+                    metadata.TryGetProperty("iban", out _))
+                    return Results.BadRequest(new { code = "srm_bank_data_requires_secure_endpoint" });
+                if (metadata.TryGetProperty("financeContactId", out var financeId) &&
+                    financeId.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+                {
+                    if (financeId.ValueKind != JsonValueKind.String ||
+                        (financeId.GetString()?.Length ?? 0) > 64)
+                        return Results.BadRequest(new { code = "srm_invalid_finance_contact" });
+                    var chosen = financeId.GetString();
+                    var matches = metadata.TryGetProperty("contacts", out var financeContacts) &&
+                        financeContacts.ValueKind == JsonValueKind.Array &&
+                        financeContacts.EnumerateArray().Any(c =>
+                            c.ValueKind == JsonValueKind.Object &&
+                            c.TryGetProperty("id", out var id) &&
+                            id.ValueKind == JsonValueKind.String && id.GetString() == chosen);
+                    if (!string.IsNullOrWhiteSpace(chosen) && !matches)
+                        return Results.BadRequest(new { code = "srm_finance_contact_not_found" });
+                }
                 foreach (var (property, limit) in new[] {
+                    ("companyPhone", 40), ("address", 500), ("economicActivityCode", 40),
+                    ("observations", 4000), ("financeContactId", 64),
                     ("taxId", 80), ("website", 200), ("contactName", 140),
                     ("contactEmail", 180), ("contactPhone", 40) })
                 {
