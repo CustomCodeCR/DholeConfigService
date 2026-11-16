@@ -18,6 +18,7 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
 
     public DbSet<CatalogGroup> CatalogGroups => Set<CatalogGroup>();
     public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();
+    public DbSet<SupplierBankRecord> SupplierBankRecords => Set<SupplierBankRecord>();
 
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
@@ -41,6 +42,17 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ServiceDbContext).Assembly);
+
+        modelBuilder.Entity<SupplierBankRecord>(entity =>
+        {
+            entity.ToTable("srm_supplier_bank_records", "config");
+            entity.HasKey(x => x.SupplierId).HasName("pk_srm_supplier_bank_records");
+            entity.Property(x => x.SupplierId).HasColumnName("supplier_id");
+            entity.Property(x => x.Ciphertext).IsRequired().HasColumnName("ciphertext");
+            entity.Property(x => x.Nonce).IsRequired().HasColumnName("nonce");
+            entity.Property(x => x.Tag).IsRequired().HasColumnName("tag");
+            entity.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+        });
 
         modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
         modelBuilder.ApplyConfiguration(new InboxMessageConfiguration());
