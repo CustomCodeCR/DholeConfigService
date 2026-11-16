@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using CustomCodeFramework.Messaging.Outbox;
+using Dhole.Config.Api.Authorization;
 using Dhole.Config.Application.Abstractions.Repositories;
 using Dhole.Config.Persistence.DbContexts;
 using Microsoft.EntityFrameworkCore;
