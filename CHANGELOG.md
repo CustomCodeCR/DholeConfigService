@@ -1,3 +1,11 @@
+## [1.8.0] - 2026-11-16
+### Added
+- Datos corporativos SRM y validación de contacto financiero, normalización UPPER CASE en API.
+- Consulta de contribuyentes de Costa Rica mediante Hacienda con caché 12 horas y control de concurrencia.
+- Almacenamiento bancario separado y cifrado AES-256-GCM con scopes específicos; cambios notifican por Outbox sin transmitir datos bancarios.
+- Migración config.srm_supplier_bank_records. Requiere llave DHOLE_SRM_BANK_KEY_BASE64 de 32 bytes para habilitar lectura y guardado.
+- Release DH-20261116-SRM-SUPPLIER-FINANCE-176 (ecosistema 1.64.0); CI, migración y staging pendientes.
+
 ## [1.7.0] - 2026-11-16 (Inventario protegido para API Manager)
 
 - MINOR DH-20261116-API-ROUTES-DEFAULTS-165: publica GET /api/internal/third-party-route-catalog con métodos y rutas runtime, accesible solo con JWT y scope integrations.thirdparty.manage; no necesita Swagger de desarrollo.
