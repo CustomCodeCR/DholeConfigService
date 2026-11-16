@@ -6,6 +6,7 @@ using CustomCodeFramework.Messaging.Outbox;
 using Dhole.Config.Api.Authorization;
 using Dhole.Config.Application.Abstractions.Repositories;
 using Dhole.Config.Persistence.DbContexts;
+using Dhole.Config.Persistence.Messaging;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dhole.Config.Api.Endpoints;
@@ -173,21 +174,28 @@ internal static class SrmSupplierBankEndpoints
             existing.Tag = tag;
             existing.UpdatedAtUtc = DateTime.UtcNow;
         }
-        // Realtime notification contains ONLY supplier id: never publish bank details.
-        db.OutboxMessages.Add(new OutboxMessage
+        // Existing durable SRM invalidation contract; no bank details in Redis.
+        if (ConfigRealtimeInvalidation.IsEnabled(configuration))
         {
-            EventId = Guid.NewGuid(),
-            EventType = "Dhole.Config.Srm.SupplierBankChanged",
-            EventName = "srm.supplier.bank.changed",
-            SourceService = "DholeConfigService",
-            PayloadJson = JsonSerializer.Serialize(new { supplierId }),
-            HeadersJson = null,
-            CorrelationId = Guid.NewGuid().ToString(),
-            Status = OutboxMessageStatus.Pending,
-            RetryCount = 0,
-            ErrorMessage = null,
-            CreatedAtUtc = DateTime.UtcNow,
-        });
+            var eventId = Guid.NewGuid();
+            var correlationId = Guid.NewGuid().ToString();
+            db.OutboxMessages.Add(new OutboxMessage
+            {
+                EventId = eventId,
+                EventType = ConfigRealtimeInvalidation.EventType("srm-supplier"),
+                EventName = "srm.supplier.changed.v1",
+                SourceService = "DholeConfigService",
+                PayloadJson = ConfigRealtimeInvalidation.Serialize(
+                    eventId, supplierId, "srm-supplier",
+                    ConfigRealtimeInvalidation.NextVersionHint(), DateTimeOffset.UtcNow, correlationId),
+                HeadersJson = null,
+                CorrelationId = correlationId,
+                Status = OutboxMessageStatus.Pending,
+                RetryCount = 0,
+                ErrorMessage = null,
+                CreatedAtUtc = DateTime.UtcNow,
+            });
+        }
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
