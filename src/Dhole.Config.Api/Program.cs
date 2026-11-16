@@ -44,6 +44,8 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddGrpc();
+builder.Services.AddHttpClient();
+builder.Services.AddMemoryCache();
 
 builder.Services.AddApplication();
 builder.Services.AddPersistence(builder.Configuration);
