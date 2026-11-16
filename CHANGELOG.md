@@ -1,3 +1,9 @@
+## [1.8.0] - 2026-11-16 (SRM: ficha fiscal y banca cifrada · master backport)
+
+- MINOR DH-20261116-SRM-SUPPLIER-FINANCE-176: perfil corporativo y UPPER CASE; integración Hacienda CR; contacto principal de Finanzas; separación bancaria cifrada AES-256-GCM y scopes restringidos. Migración `20261116170000_AddSrmSupplierBankRecords`.
+- `DHOLE_SRM_BANK_KEY_BASE64`: 32 bytes Base64 que deben permanecer estables y respaldarse de forma segura; el endpoint bancario no permite guardar registros sin esta llave. Cambios realtime usan envelope SRM sin contenido bancario.
+- Backport selectivo sin promover cambios pendientes ajenos de develop.
+
 # Changelog
 
 ## [1.5.0] - 2026-11-12
