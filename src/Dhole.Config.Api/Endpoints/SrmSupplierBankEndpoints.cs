@@ -123,7 +123,7 @@ internal static class SrmSupplierBankEndpoints
             var bank = Upper(account.BankName);
             var holder = Upper(account.AccountHolder);
             var registration = Upper(account.Registration);
-            var number = Upper(account.AccountNumber).Replace(" ", "");
+            var number = SrmIbanRules.NormalizeAccount(account.AccountNumber);
             var swift = Upper(account.SwiftBic);
             var currency = Upper(account.Currency);
             var intermediary = Upper(account.IntermediaryBank);
@@ -138,6 +138,8 @@ internal static class SrmSupplierBankEndpoints
                 country is null || country.IsDeleted || !country.IsActive ||
                 country.CatalogGroupId != countryGroup.Id)
                 return Results.BadRequest(new { code = "srm_invalid_bank_account" });
+            if (!SrmIbanRules.IsValid(number, country.Code, country.Value, country.Slug, country.Name))
+                return Results.BadRequest(new { code = "srm_invalid_iban_for_country" });
             if (!fingerprints.Add(country.Id + ":" + number))
                 return Results.BadRequest(new { code = "srm_duplicate_bank_account" });
             normalized.Add(account with {
