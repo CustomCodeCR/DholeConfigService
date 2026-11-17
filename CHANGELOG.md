@@ -1,3 +1,9 @@
+## [1.9.0] - 2026-11-17 (SRM: eliminación lógica de proveedores)
+
+- MINOR DH-20261117-SRM-SUPPLIER-DELETE-190: DELETE /api/config/srm/suppliers/{supplierId} con scope srm.supplier.archive; impide borrar proveedores del sistema, inexistentes o con contratos y evaluaciones vinculados.
+- Conserva la banca cifrada, genera auditoría y Outbox realtime de invalidación SRM sin datos sensibles; añade prueba de referencias exactas.
+- Config 1.8.1 → 1.9.0; ecosistema 1.69.2 → 1.70.0. Backport selectivo a master autorizado por el usuario; CI y validación post-despliegue obligatorias.
+
 ## [1.8.1] - 2026-11-16 (SRM: IBAN seguro por país)
 
 - PATCH DH-20261116-SRM-IBAN-181: endpoint bancario rechaza IBAN sin prefijo, longitud exacta o dígitos de control MOD-97 válidos según país registrado en Config; acepta números nacionales sin prefijo IBAN ficticio.
