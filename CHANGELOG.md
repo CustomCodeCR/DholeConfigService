@@ -1,3 +1,9 @@
+## [1.8.1] - 2026-11-16 (SRM: IBAN seguro por país)
+
+- PATCH DH-20261116-SRM-IBAN-181: endpoint bancario rechaza IBAN sin prefijo, longitud exacta o dígitos de control MOD-97 válidos según país registrado en Config; acepta números nacionales sin prefijo IBAN ficticio.
+- Se conserva cifrado AES-256-GCM, scopes financieros, endpoint REST y evento de invalidación de realtime sin publicar datos bancarios. Pruebas de IBAN CR, DE, GB y de cuentas nacionales.
+- Config 1.8.0 → 1.8.1; ecosistema 1.66.1 → 1.66.2; CI/staging pendientes y producción no autorizada.
+
 ## [1.8.0] - 2026-11-16
 ### Added
 - Datos corporativos SRM y validación de contacto financiero, normalización UPPER CASE en API.
