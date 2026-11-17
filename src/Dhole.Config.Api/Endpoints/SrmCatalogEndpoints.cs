@@ -323,7 +323,7 @@ public static class SrmCatalogEndpoints
         return EndpointResults.FromResult(result, context);
     }
 
-    internal static bool HasSupplierReference(string? metadataJson, Guid supplierId)
+    public static bool HasSupplierReference(string? metadataJson, Guid supplierId)
     {
         if (string.IsNullOrWhiteSpace(metadataJson)) return false;
         try
