@@ -8,6 +8,7 @@ using Dhole.Config.Api.Extensions;
 using Dhole.Config.Application.Abstractions.Repositories;
 using Dhole.Config.Application.CatalogGroups.CreateCatalogGroup;
 using Dhole.Config.Application.CatalogItems.CreateCatalogItem;
+using Dhole.Config.Application.CatalogItems.DeleteCatalogItem;
 using Dhole.Config.Application.CatalogItems.GetCatalogItemsByGroupSlug;
 using Dhole.Config.Application.CatalogItems.UpdateCatalogItem;
 using Dhole.Config.Contracts.Catalogs;
@@ -80,6 +81,13 @@ public static class SrmCatalogEndpoints
                 CancellationToken ct) =>
             UpdateSupplierAsync(supplierId, input, commands, groups, items, context, ct))
             .RequireScope("srm.supplier.update");
+
+        route.MapDelete("/suppliers/{supplierId:guid}", (
+                Guid supplierId, IQueryDispatcher queries, ICommandDispatcher commands,
+                ICatalogGroupRepository groups, ICatalogItemRepository items, HttpContext context,
+                CancellationToken ct) =>
+            DeleteSupplierAsync(supplierId, queries, commands, groups, items, context, ct))
+            .RequireScope("srm.supplier.archive");
 
         route.MapSrmSupplierBankEndpoints();
         route.MapSrmHaciendaEndpoints();
@@ -255,6 +263,51 @@ public static class SrmCatalogEndpoints
                 request.Value?.Trim(), request.MetadataJson,
                 request.SortOrder, context.GetCurrentUserId()), ct);
         return EndpointResults.FromResult(result, context);
+    }
+
+    // SRM deletion is logical: the Config command audits and publishes its domain event
+    // through the existing outbox. Never delete linked history or encrypted bank records.
+    private static async Task<IResult> DeleteSupplierAsync(
+        Guid supplierId, IQueryDispatcher queries, ICommandDispatcher commands,
+        ICatalogGroupRepository groups, ICatalogItemRepository items,
+        HttpContext context, CancellationToken ct)
+    {
+        var group = await groups.GetBySlugAsync(Suppliers, ct);
+        var supplier = await items.GetByIdAsync(supplierId, ct);
+        if (group is null || supplier is null || supplier.IsDeleted ||
+            supplier.CatalogGroupId != group.Id)
+            return Results.NotFound(new { code = "srm_supplier_not_found" });
+        if (supplier.IsSystem)
+            return Results.Conflict(new { code = "srm_system_supplier_cannot_be_deleted" });
+
+        foreach (var (slug, relation) in new[] {
+            (Contracts, "contracts"), (Evaluations, "evaluations") })
+        {
+            var records = await queries.DispatchAsync(
+                new GetCatalogItemsByGroupSlugQuery(slug), ct);
+            if (records.Any(record => HasSupplierReference(record.MetadataJson, supplierId)))
+                return Results.Conflict(new { code = "srm_supplier_has_dependencies", relation });
+        }
+
+        var result = await commands.DispatchAsync(
+            new DeleteCatalogItemCommand(supplierId, context.GetCurrentUserId()), ct);
+        return EndpointResults.FromResult(result, context);
+    }
+
+    internal static bool HasSupplierReference(string? metadataJson, Guid supplierId)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+            var root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("supplierId", out var reference) &&
+                reference.ValueKind == JsonValueKind.String &&
+                Guid.TryParse(reference.GetString(), out var linkedId) &&
+                linkedId == supplierId;
+        }
+        catch (JsonException) { return false; }
     }
 
     /// <summary>Enforce UPPER CASE on supplier text at the API boundary, not merely in the browser.</summary>
