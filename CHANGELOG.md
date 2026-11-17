@@ -1,3 +1,10 @@
+## [1.9.1] - 2026-11-17 (DH-20261117-CONFIG-APT-DEPLOY-191 · producción Config: build Docker resistente)
+
+- PATCH: acota `apt-get update/install` en los dos Dockerfiles a 180/300 s, fuerza IPv4, limita tiempos de conexión y reintenta errores de red sin prompts de tzdata.
+- Docker en staging y producción usa la red del host para el build, logs `--progress=plain` y tiempo máximo; los releases nuevos de producción cancelan el build anterior atascado con la misma concurrency key, sin tocar los contenedores existentes hasta construir ambas imágenes.
+- API y workers conservan las mismas dependencias; no se cambian contratos REST, datos, OAuth, Redis, SignalR ni lógica de SRM.
+- Config 1.9.0 → 1.9.1; ecosistema 1.70.0 → 1.70.1. Validar CI, staging y health tras despliegue.
+
 ## [1.9.0] - 2026-11-17 (SRM: eliminación lógica de proveedores)
 
 - MINOR DH-20261117-SRM-SUPPLIER-DELETE-190: DELETE /api/config/srm/suppliers/{supplierId} con scope srm.supplier.archive; impide borrar proveedores del sistema, inexistentes o con contratos y evaluaciones vinculados.
