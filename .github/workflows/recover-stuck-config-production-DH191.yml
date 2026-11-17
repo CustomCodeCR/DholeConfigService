@@ -1,0 +1,41 @@
+name: DH-191 Recover blocked Config build (one-time)
+on:
+  push:
+    branches: [develop]
+    paths:
+      - .github/workflows/recover-stuck-config-production-DH191.yml
+permissions:
+  actions: write
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Cancel only the known obsolete production build while stuck at Docker build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          path="repos/CustomCodeCR/DholeConfigService/actions/runs/44015313429"
+          actual_sha="$(gh api "$path" --jq '.head_sha')"
+          expected_sha="737aefd0fb3dce571b1a386f50196b3841f98da8"
+          if [[ "$actual_sha" != "$expected_sha" ]]; then
+            echo "::error::Run SHA mismatch; refusing to cancel unrelated run."
+            exit 1
+          fi
+          state="$(gh api "$path" --jq '.status')"
+          if [[ "$state" == "completed" ]]; then
+            echo "Original run already completed; nothing to cancel."
+            exit 0
+          fi
+          active_step="$(gh api "$path/jobs?per_page=100" --jq '[.jobs[].steps[] | select(.status=="in_progress") | .name] | join(",")')"
+          if [[ "$state" != "in_progress" || "$active_step" != *"Build images"* ]]; then
+            echo "Run is not stuck in Build images ($state / $active_step); refusing to interrupt it."
+            exit 0
+          fi
+          gh api --method POST "$path/cancel" >/dev/null || {
+            new_state="$(gh api "$path" --jq '.status')"
+            [[ "$new_state" == "completed" ]]
+          }
+          echo "Cancellation requested only for obsolete Config build #44015313429."

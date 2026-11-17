@@ -2,9 +2,19 @@
 
 # Base image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-RUN apt-get update && \
-  apt-get install -y tzdata apt-utils libgdiplus libc6-dev libgssapi-krb5-2 && \
-  ln -s /usr/lib/libgdiplus.so /usr/lib/gdiplus.dll && \
+# Keep APT bounded: a degraded Debian mirror must not exhaust the self-hosted runner.
+# Use host networking in the deployment workflow so Docker's bridge DNS is not a dependency.
+RUN set -eux; \
+  export DEBIAN_FRONTEND=noninteractive; \
+  timeout --signal=TERM --kill-after=10s 180s apt-get \
+    -o Acquire::Retries=2 -o Acquire::ForceIPv4=true \
+    -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update; \
+  timeout --signal=TERM --kill-after=10s 300s apt-get \
+    -o Acquire::Retries=2 -o Acquire::ForceIPv4=true \
+    -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 \
+    install -y --no-install-recommends \
+      tzdata apt-utils libgdiplus libc6-dev libgssapi-krb5-2; \
+  ln -sf /usr/lib/libgdiplus.so /usr/lib/gdiplus.dll; \
   rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
