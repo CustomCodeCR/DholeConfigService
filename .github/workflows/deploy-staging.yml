@@ -18,6 +18,7 @@ env:
   COMPOSE_PROJECT: dhole-staging
 jobs:
   deploy:
+    timeout-minutes: 45
     runs-on: [self-hosted, linux, x64, dhole]
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +41,8 @@ jobs:
         run: |
           set -euo pipefail
           SHA_TAG="${GITHUB_SHA::12}"
-          docker build --pull --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Config.Api/Dockerfile -t dhole/config-api:staging -t "dhole/config-api:staging-$SHA_TAG" .
-          docker build --pull --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Config.Workers/Dockerfile -t dhole/config-workers:staging -t "dhole/config-workers:staging-$SHA_TAG" .
+          timeout --signal=TERM --kill-after=30s 900s docker build --pull --progress=plain --network=host --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Config.Api/Dockerfile -t dhole/config-api:staging -t "dhole/config-api:staging-$SHA_TAG" .
+          timeout --signal=TERM --kill-after=30s 900s docker build --pull --progress=plain --network=host --build-arg GITHUB_ACTOR="$GITHUB_ACTOR" --secret id=github_token,env=GITHUB_TOKEN -f src/Dhole.Config.Workers/Dockerfile -t dhole/config-workers:staging -t "dhole/config-workers:staging-$SHA_TAG" .
       - name: Deploy Config staging
         run: |
           set -euo pipefail
