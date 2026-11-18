@@ -48,7 +48,7 @@ public sealed class CatalogItemRepository(ServiceDbContext dbContext)
     }
 
 
-    public Task<bool> ExistsByNameAsync(
+    public async Task<bool> ExistsByNameAsync(
         Guid catalogGroupId,
         string name,
         Guid? excludeId = null,
