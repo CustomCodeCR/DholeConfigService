@@ -1,3 +1,10 @@
+## [1.11.0] - 2026-11-18 (SRM · rutas de proveedores)
+
+- MINOR DH-20261118-SRM-ROUTES-225: crea el catálogo de 10 categorías SRM específicas, desactiva categorías genéricas de transporte sin borrar clasificaciones históricas.
+- Agrega cobertura de rutas por proveedor (multiorigen POL y multidestino POE/POD) con validación de terminal, modalidad y catálogo; endpoints CRUD con scopes srm.supplier.read/update.
+- Migración PostgreSQL indexada, bitácora de cambios por actor y eventos Outbox realtime en transacciones. Endpoint limitado a identidad y cobertura para futuras búsquedas de proveedores por parte de Pricing, con scope pricing.cost.view.
+- Config 1.10.1 → 1.11.0; Web 1.80.0 → 1.81.0; ecosistema 1.84.0 → 1.85.0. Requiere migración, pruebas y staging antes de integración a producción.
+
 ## [1.10.1] - 2026-11-17 (SRM · reutilizar nombre archivado)
 
 - PATCH DH-20261117-SRM-ARCHIVE-UI-203: crear un proveedor nuevo con el nombre de un proveedor previamente archivado ya no provoca srm duplicate-name; SRM valida solo nombres activos, mientras los otros catálogos mantienen la reserva histórica.
