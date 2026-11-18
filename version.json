@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "ecosystem": "Dhole",
   "component": "DholeConfigService",
-  "version": "1.9.1",
-  "ecosystemVersion": "1.70.1",
-  "releaseId": "DH-20261117-CONFIG-APT-DEPLOY-191",
+  "version": "1.10.0",
+  "ecosystemVersion": "1.71.4",
+  "releaseId": "DH-20261117-SRM-RECORDS-201",
   "releaseStatus": "candidate-ci-and-staging-pending",
-  "businessReleaseId": "DH-20261117-CONFIG-APT-DEPLOY-191"
+  "businessReleaseId": "DH-20261117-SRM-RECORDS-201"
 }
