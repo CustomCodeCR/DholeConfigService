@@ -1,3 +1,9 @@
+## [1.10.0] - 2026-11-17 (SRM · seguimiento y bitácora de proveedores)
+
+- MINOR DH-20261117-SRM-RECORDS-201: bitácora append-only por proveedor con tipo de gestión, asunto, detalle, siguiente gestión opcional, autor y fecha de servidor.
+- GET y POST /api/config/srm/suppliers/{supplierId}/followups; scopes SRM de lectura y edición, validación del proveedor, persistencia PostgreSQL, migración y evento Redis Outbox saneado.
+- No se agregan documentos al catálogo JSON ni se altera la protección de cuentas bancarias. Config 1.9.1 → 1.10.0; ecosistema 1.70.1 → 1.71.4.
+
 ## [1.9.1] - 2026-11-17 (DH-20261117-CONFIG-APT-DEPLOY-191 · producción Config: build Docker resistente)
 
 - PATCH: acota `apt-get update/install` en los dos Dockerfiles a 180/300 s, fuerza IPv4, limita tiempos de conexión y reintenta errores de red sin prompts de tzdata.
