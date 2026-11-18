@@ -39,7 +39,8 @@ internal sealed class CatalogItemConfiguration : EntityTypeConfigurationBase<Cat
 
         builder.HasIndex(x => new { x.CatalogGroupId, x.Slug }).IsUnique();
 
-        builder.HasIndex(x => new { x.CatalogGroupId, x.Name }).IsUnique();
+        builder.HasIndex(x => new { x.CatalogGroupId, x.Name }).IsUnique()
+            .HasFilter("is_deleted = false");
 
         builder.HasIndex(x => new { x.CatalogGroupId, x.SortOrder });
 

@@ -378,7 +378,8 @@ namespace Dhole.Config.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("CatalogGroupId", "Name")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("is_deleted = false");
 
                     b.HasIndex("CatalogGroupId", "Slug")
                         .IsUnique();
