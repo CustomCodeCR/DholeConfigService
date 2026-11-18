@@ -420,6 +420,37 @@ namespace Dhole.Config.Persistence.Migrations
                     b.HasIndex("SupplierId", "CreatedAtUtc").HasDatabaseName("ix_srm_supplier_followups_supplier_created");
                     b.ToTable("srm_supplier_followups", "config");
                 });
+
+            modelBuilder.Entity("Dhole.Config.Persistence.DbContexts.SupplierRouteRecord", b =>
+                {
+                    b.Property<Guid>("Id").HasColumnType("uuid").HasColumnName("id");
+                    b.Property<Guid>("SupplierId").HasColumnType("uuid").HasColumnName("supplier_id");
+                    b.Property<string>("TransportMode").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)").HasColumnName("transport_mode");
+                    b.Property<Guid[]>("OriginIds").IsRequired().HasColumnType("uuid[]").HasColumnName("origin_ids");
+                    b.Property<Guid[]>("DestinationIds").IsRequired().HasColumnType("uuid[]").HasColumnName("destination_ids");
+                    b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone").HasColumnName("created_at_utc");
+                    b.Property<DateTime>("UpdatedAtUtc").HasColumnType("timestamp with time zone").HasColumnName("updated_at_utc");
+                    b.Property<string>("CreatedById").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)").HasColumnName("created_by_id");
+                    b.Property<string>("UpdatedById").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)").HasColumnName("updated_by_id");
+                    b.HasKey("Id").HasName("pk_srm_supplier_routes");
+                    b.HasIndex("SupplierId", "TransportMode").HasDatabaseName("ix_srm_supplier_routes_supplier_mode");
+                    b.ToTable("srm_supplier_routes", "config");
+                });
+
+            modelBuilder.Entity("Dhole.Config.Persistence.DbContexts.SupplierRouteAuditRecord", b =>
+                {
+                    b.Property<Guid>("Id").HasColumnType("uuid").HasColumnName("id");
+                    b.Property<Guid>("SupplierId").HasColumnType("uuid").HasColumnName("supplier_id");
+                    b.Property<Guid>("RouteId").HasColumnType("uuid").HasColumnName("route_id");
+                    b.Property<string>("Action").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)").HasColumnName("action");
+                    b.Property<string>("BeforeJson").HasColumnType("text").HasColumnName("before_json");
+                    b.Property<string>("AfterJson").HasColumnType("text").HasColumnName("after_json");
+                    b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone").HasColumnName("created_at_utc");
+                    b.Property<string>("ActorId").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)").HasColumnName("actor_id");
+                    b.HasKey("Id").HasName("pk_srm_supplier_route_audit");
+                    b.HasIndex("SupplierId", "CreatedAtUtc").HasDatabaseName("ix_srm_supplier_route_audit_supplier_created");
+                    b.ToTable("srm_supplier_route_audit", "config");
+                });
 #pragma warning restore 612, 618
         }
     }
