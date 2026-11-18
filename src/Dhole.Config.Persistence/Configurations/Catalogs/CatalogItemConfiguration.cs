@@ -39,7 +39,10 @@ internal sealed class CatalogItemConfiguration : EntityTypeConfigurationBase<Cat
 
         builder.HasIndex(x => new { x.CatalogGroupId, x.Slug }).IsUnique();
 
-        builder.HasIndex(x => new { x.CatalogGroupId, x.Name }).IsUnique();
+        // Archived supplier names must be available for a fresh supplier ID.
+        // Other catalogs keep the legacy application-level deleted-name reservation.
+        builder.HasIndex(x => new { x.CatalogGroupId, x.Name }).IsUnique()
+            .HasFilter("is_deleted = false");
 
         builder.HasIndex(x => new { x.CatalogGroupId, x.SortOrder });
 

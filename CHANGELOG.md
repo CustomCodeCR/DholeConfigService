@@ -1,3 +1,9 @@
+## [1.10.1] - 2026-11-17 (SRM · reutilizar nombre archivado)
+
+- PATCH DH-20261117-SRM-ARCHIVE-UI-203: crear un proveedor nuevo con el nombre de un proveedor previamente archivado ya no provoca srm duplicate-name; SRM valida solo nombres activos, mientras los otros catálogos mantienen la reserva histórica.
+- Migración PostgreSQL parcial del índice único de nombre de CatalogItems (is_deleted = false). Los registros archivados conservan ID, slug, código, auditoría, referencias y datos históricos; los nuevos obtienen IDs/códigos/slugs nuevos. Rollback detecta duplicados antes de restaurar la restricción.
+- Config 1.10.0 → 1.10.1; ecosistema 1.72.0 → 1.73.0. Requiere validación PostgreSQL y staging.
+
 ## [1.10.0] - 2026-11-17 (SRM · seguimiento y bitácora de proveedores)
 
 - MINOR DH-20261117-SRM-RECORDS-201: bitácora append-only por proveedor con tipo de gestión, asunto, detalle, siguiente gestión opcional, autor y fecha de servidor.
