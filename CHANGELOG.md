@@ -1,3 +1,9 @@
+## [1.11.0] - 2026-11-18 (SRM · rutas de proveedores)
+
+- MINOR DH-20261118-SRM-ROUTES-225: diez nuevas categorías de proveedores (sustitución no destructiva de Transporte), selección múltiple conservada.
+- API CRUD con scopes de SRM, validación POL/POE/POD y modo, tablas PostgreSQL indexadas, auditoría por usuario y eventos en Outbox realtime; consulta mínima para Pricing.
+- Config 1.10.1 → 1.11.0; Web 1.80.3 → 1.81.0; ecosistema 1.84.3 → 1.85.0. CI/staging pendientes; producción no autorizada.
+
 ## [1.10.1] - 2026-11-17 (SRM · reutilizar nombre archivado)
 
 - PATCH DH-20261117-SRM-ARCHIVE-UI-203: crear un proveedor nuevo con el nombre de un proveedor previamente archivado ya no provoca srm duplicate-name; SRM valida solo nombres activos, mientras los otros catálogos mantienen la reserva histórica.
