@@ -54,7 +54,7 @@ public sealed class SrmArchivedSupplierNameTests
         var rows = await db.CatalogItems.AsNoTracking()
             .Where(x => x.CatalogGroupId == groupId && x.Name == name)
             .Select(x => new { x.Id, x.IsDeleted }).ToListAsync();
-        Assert.AreEqual(2, rows.Count, "The old record must remain archived.");
+        Assert.HasCount(2, rows, "The old record must remain archived.");
         Assert.IsTrue(rows.Single(x => x.Id == archivedId).IsDeleted);
         Assert.IsFalse(rows.Single(x => x.Id == freshId).IsDeleted);
         await transaction.RollbackAsync();
