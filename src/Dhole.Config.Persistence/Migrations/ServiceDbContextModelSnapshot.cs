@@ -404,6 +404,21 @@ namespace Dhole.Config.Persistence.Migrations
                 {
                     b.Navigation("Items");
                 });
+            modelBuilder.Entity("Dhole.Config.Persistence.DbContexts.SupplierFollowupRecord", b =>
+                {
+                    b.Property<Guid>("Id").HasColumnType("uuid").HasColumnName("id");
+                    b.Property<Guid>("SupplierId").HasColumnType("uuid").HasColumnName("supplier_id");
+                    b.Property<string>("Kind").IsRequired().HasMaxLength(30).HasColumnType("character varying(30)").HasColumnName("kind");
+                    b.Property<string>("Title").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)").HasColumnName("title");
+                    b.Property<string>("Details").IsRequired().HasMaxLength(4000).HasColumnType("character varying(4000)").HasColumnName("details");
+                    b.Property<DateTime?>("NextActionAtUtc").HasColumnType("timestamp with time zone").HasColumnName("next_action_at_utc");
+                    b.Property<DateTime>("CreatedAtUtc").HasColumnType("timestamp with time zone").HasColumnName("created_at_utc");
+                    b.Property<string>("CreatedById").IsRequired().HasMaxLength(160).HasColumnType("character varying(160)").HasColumnName("created_by_id");
+                    b.Property<string>("CreatedByName").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)").HasColumnName("created_by_name");
+                    b.HasKey("Id").HasName("pk_srm_supplier_followups");
+                    b.HasIndex("SupplierId", "CreatedAtUtc").HasDatabaseName("ix_srm_supplier_followups_supplier_created");
+                    b.ToTable("srm_supplier_followups", "config");
+                });
 #pragma warning restore 612, 618
         }
     }
