@@ -94,6 +94,7 @@ public static class SrmCatalogEndpoints
             .RequireScope("srm.supplier.archive");
 
         route.MapSrmSupplierBankEndpoints();
+        route.MapSrmSupplierFollowupEndpoints();
         route.MapSrmHaciendaEndpoints();
 
         return app;

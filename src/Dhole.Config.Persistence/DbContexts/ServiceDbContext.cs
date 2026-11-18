@@ -21,6 +21,7 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
     public DbSet<CatalogGroup> CatalogGroups => Set<CatalogGroup>();
     public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();
     public DbSet<SupplierBankRecord> SupplierBankRecords => Set<SupplierBankRecord>();
+    public DbSet<SupplierFollowupRecord> SupplierFollowups => Set<SupplierFollowupRecord>();
 
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
@@ -56,6 +57,23 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options,
             entity.Property(x => x.Nonce).IsRequired().HasColumnName("nonce");
             entity.Property(x => x.Tag).IsRequired().HasColumnName("tag");
             entity.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+        });
+
+        modelBuilder.Entity<SupplierFollowupRecord>(entity =>
+        {
+            entity.ToTable("srm_supplier_followups", "config");
+            entity.HasKey(x => x.Id).HasName("pk_srm_supplier_followups");
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.SupplierId).HasColumnName("supplier_id");
+            entity.Property(x => x.Kind).HasMaxLength(30).IsRequired().HasColumnName("kind");
+            entity.Property(x => x.Title).HasMaxLength(200).IsRequired().HasColumnName("title");
+            entity.Property(x => x.Details).HasMaxLength(4000).IsRequired().HasColumnName("details");
+            entity.Property(x => x.NextActionAtUtc).HasColumnName("next_action_at_utc");
+            entity.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            entity.Property(x => x.CreatedById).HasMaxLength(160).IsRequired().HasColumnName("created_by_id");
+            entity.Property(x => x.CreatedByName).HasMaxLength(200).IsRequired().HasColumnName("created_by_name");
+            entity.HasIndex(x => new { x.SupplierId, x.CreatedAtUtc })
+                .HasDatabaseName("ix_srm_supplier_followups_supplier_created");
         });
 
         modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
