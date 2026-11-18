@@ -20,6 +20,8 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
     public DbSet<CatalogItem> CatalogItems => Set<CatalogItem>();
     public DbSet<SupplierBankRecord> SupplierBankRecords => Set<SupplierBankRecord>();
     public DbSet<SupplierFollowupRecord> SupplierFollowups => Set<SupplierFollowupRecord>();
+    public DbSet<SupplierRouteRecord> SupplierRoutes => Set<SupplierRouteRecord>();
+    public DbSet<SupplierRouteAuditRecord> SupplierRouteAudits => Set<SupplierRouteAuditRecord>();
 
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
@@ -70,6 +72,36 @@ public sealed class ServiceDbContext(DbContextOptions<ServiceDbContext> options)
             entity.Property(x => x.CreatedByName).HasMaxLength(200).IsRequired().HasColumnName("created_by_name");
             entity.HasIndex(x => new { x.SupplierId, x.CreatedAtUtc })
                 .HasDatabaseName("ix_srm_supplier_followups_supplier_created");
+        });
+
+        modelBuilder.Entity<SupplierRouteRecord>(entity =>
+        {
+            entity.ToTable("srm_supplier_routes", "config");
+            entity.HasKey(x => x.Id).HasName("pk_srm_supplier_routes");
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.SupplierId).HasColumnName("supplier_id");
+            entity.Property(x => x.TransportMode).HasMaxLength(20).IsRequired().HasColumnName("transport_mode");
+            entity.Property(x => x.OriginIds).HasColumnType("uuid[]").HasColumnName("origin_ids");
+            entity.Property(x => x.DestinationIds).HasColumnType("uuid[]").HasColumnName("destination_ids");
+            entity.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            entity.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc");
+            entity.Property(x => x.CreatedById).HasMaxLength(160).IsRequired().HasColumnName("created_by_id");
+            entity.Property(x => x.UpdatedById).HasMaxLength(160).IsRequired().HasColumnName("updated_by_id");
+            entity.HasIndex(x => new { x.SupplierId, x.TransportMode }).HasDatabaseName("ix_srm_supplier_routes_supplier_mode");
+        });
+        modelBuilder.Entity<SupplierRouteAuditRecord>(entity =>
+        {
+            entity.ToTable("srm_supplier_route_audit", "config");
+            entity.HasKey(x => x.Id).HasName("pk_srm_supplier_route_audit");
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.SupplierId).HasColumnName("supplier_id");
+            entity.Property(x => x.RouteId).HasColumnName("route_id");
+            entity.Property(x => x.Action).HasMaxLength(20).IsRequired().HasColumnName("action");
+            entity.Property(x => x.BeforeJson).HasColumnName("before_json");
+            entity.Property(x => x.AfterJson).HasColumnName("after_json");
+            entity.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc");
+            entity.Property(x => x.ActorId).HasMaxLength(160).IsRequired().HasColumnName("actor_id");
+            entity.HasIndex(x => new { x.SupplierId, x.CreatedAtUtc }).HasDatabaseName("ix_srm_supplier_route_audit_supplier_created");
         });
 
         modelBuilder.ApplyConfiguration(new OutboxMessageConfiguration());
