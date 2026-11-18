@@ -29,6 +29,7 @@ public sealed class SrmArchivedSupplierNameTests
         var archivedId = Guid.NewGuid();
         var freshId = Guid.NewGuid();
 
+        const string emptyMetadata = "{}";
         async Task Insert(Guid id, string code, string slug, bool deleted)
         {
             await db.Database.ExecuteSqlInterpolatedAsync($"""
@@ -36,7 +37,7 @@ public sealed class SrmArchivedSupplierNameTests
                     id, catalog_group_id, code, slug, name, metadata_json,
                     sort_order, is_system, is_active, created_at_utc, created_by, is_deleted)
                 VALUES (
-                    {id}, {groupId}, {code}, {slug}, {name}, '{{}}'::jsonb,
+                    {id}, {groupId}, {code}, {slug}, {name}, {emptyMetadata}::jsonb,
                     0, false, true, now(), 'srm-test', {deleted})
                 """);
         }
