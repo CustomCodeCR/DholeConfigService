@@ -95,6 +95,7 @@ public static class SrmCatalogEndpoints
 
         route.MapSrmSupplierBankEndpoints();
         route.MapSrmSupplierFollowupEndpoints();
+        route.MapSrmSupplierRouteEndpoints();
         route.MapSrmHaciendaEndpoints();
 
         return app;

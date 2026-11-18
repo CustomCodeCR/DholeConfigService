@@ -1,0 +1,41 @@
+{
+  "releaseId": "DH-20261118-SRM-ROUTES-225",
+  "component": "DholeConfigService",
+  "ecosystem": "Dhole",
+  "ecosystemVersion": "1.85.0",
+  "releaseType": "MINOR",
+  "previousVersion": "1.10.1",
+  "version": "1.11.0",
+  "relatedComponents": [
+    {
+      "component": "DholeWeb",
+      "previousVersion": "1.80.3",
+      "version": "1.81.0"
+    },
+    {
+      "component": "DholeConfigService",
+      "previousVersion": "1.10.1",
+      "version": "1.11.0"
+    }
+  ],
+  "changes": [
+    "10 categorías logísticas nuevas, selección múltiple, categorías históricas conservadas",
+    "Rutas POL / POE / POD con modo de transporte, múltiples combinaciones y CRUD con auditoría",
+    "UI DhDrawer con pestañas; API futura de búsqueda por cobertura de Pricing"
+  ],
+  "scopes": {
+    "read": "srm.supplier.read",
+    "write": "srm.supplier.update",
+    "pricingCoverage": "pricing.cost.view"
+  },
+  "rest": "backward-compatible",
+  "realtime": "srm.supplier.changed.v1 via outbox",
+  "validation": {
+    "unit": "pending",
+    "build": "pending",
+    "ci": "pending",
+    "staging": "pending",
+    "production": "not-approved"
+  },
+  "releaseBranch": "feature/DH-20261118-SRM-ROUTES-225-develop"
+}
