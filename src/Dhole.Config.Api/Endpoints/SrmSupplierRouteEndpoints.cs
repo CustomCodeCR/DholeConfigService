@@ -201,6 +201,16 @@ internal static class SrmSupplierRouteEndpoints
         if (route is null) return Results.NotFound(new { code = "srm_route_not_found" });
         var invalid = await Validate(input, groups, items, ct);
         if (invalid is not null) return invalid;
+        var normalizedMode = input.TransportMode.Trim().ToLowerInvariant();
+        var normalizedOrigins = input.OriginIds.Order().ToArray();
+        var normalizedDestinations = input.DestinationIds.Order().ToArray();
+        var otherRoutes = await db.SupplierRoutes.AsNoTracking()
+            .Where(x => x.SupplierId == supplierId && x.TransportMode == normalizedMode && x.Id != routeId)
+            .ToListAsync(ct);
+        if (otherRoutes.Any(x => x.OriginIds.Order().SequenceEqual(normalizedOrigins) &&
+                                x.DestinationIds.Order().SequenceEqual(normalizedDestinations)))
+            return Results.Conflict(new { code = "srm_duplicate_supplier_route" });
+
         var before = new SupplierRouteRecord
         {
             Id = route.Id, SupplierId = route.SupplierId, TransportMode = route.TransportMode,
@@ -208,9 +218,9 @@ internal static class SrmSupplierRouteEndpoints
             CreatedAtUtc = route.CreatedAtUtc, UpdatedAtUtc = route.UpdatedAtUtc,
             CreatedById = route.CreatedById, UpdatedById = route.UpdatedById
         };
-        route.TransportMode = input.TransportMode.Trim().ToLowerInvariant();
-        route.OriginIds = input.OriginIds.Order().ToArray();
-        route.DestinationIds = input.DestinationIds.Order().ToArray();
+        route.TransportMode = normalizedMode;
+        route.OriginIds = normalizedOrigins;
+        route.DestinationIds = normalizedDestinations;
         route.UpdatedAtUtc = DateTime.UtcNow;
         route.UpdatedById = Actor(context);
         RecordMutation(db, configuration, context, supplierId, routeId, "update", before, route);
