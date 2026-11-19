@@ -1,0 +1,19 @@
+{
+  "releaseId": "DH-20261118-CRM-PROSPECT-235",
+  "component": "DholeConfigService",
+  "ecosystemVersion": "1.88.0",
+  "releaseType": "MINOR",
+  "previousVersion": "1.11.0",
+  "version": "1.12.0",
+  "changes": [
+    "Add Config-managed CRM prospect source catalog",
+    "Seed structured lead acquisition source codes without replacing existing items"
+  ],
+  "validation": {
+    "build": "pending",
+    "tests": "pending",
+    "staging": "pending",
+    "production": "not-authorized"
+  },
+  "candidateBranch": "feature/DH-20261118-CRM-PROSPECT-235-config-master"
+}
