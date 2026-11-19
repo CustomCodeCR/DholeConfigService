@@ -1,3 +1,9 @@
+## [1.12.0] - 2026-11-18
+
+### Added
+- Config-managed prospect acquisition source catalog (cold visits, referrals, social media, zones, calls, web, events, other).
+- Idempotent, non-destructive migration preserving IDs of existing references.
+
 ## [1.11.0] - 2026-11-18 (SRM · rutas de proveedores)
 
 - MINOR DH-20261118-SRM-ROUTES-225: crea el catálogo de 10 categorías SRM específicas, desactiva categorías genéricas de transporte sin borrar clasificaciones históricas.
