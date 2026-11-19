@@ -1,3 +1,9 @@
+## [1.12.0] - 2026-11-18
+
+### Added
+- Editable Config catalog of CRM prospect acquisition sources: cold visits, referrals, social media, mapping by zone, calls, website, events and others.
+- Idempotent non-destructive source migration preserving existing catalog references.
+
 ## [1.11.0] - 2026-11-18 (SRM · rutas de proveedores)
 
 - MINOR DH-20261118-SRM-ROUTES-225: diez nuevas categorías de proveedores (sustitución no destructiva de Transporte), selección múltiple conservada.
